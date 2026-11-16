@@ -2,7 +2,7 @@
 
 An eFootball Mobile rivalry tracker. Friends form 1v1 rivalries and log matches from stats-page screenshots.
 
-This repository currently contains the foundation, the database schema, and authentication (sign-up, login, Google OAuth, a protected `/home`). Rivalries, match upload and dashboards are not built yet.
+This repository currently contains the foundation, the database schema, authentication (sign-up, login, Google OAuth) and the rivalry workflow (search, challenge, accept or decline, cancel, a rivalry page shell). Match upload and stats dashboards are not built yet.
 
 ## Stack
 
@@ -94,6 +94,17 @@ Auth.js v5 with JWT sessions (30 days, no database adapter). The configuration i
 - **Protection**: `src/proxy.ts` redirects signed-out visitors away from `/home` and `/onboarding` (and signed-in visitors away from `/login` and `/signup`). The pages and server actions check the session again themselves.
 
 In Server Components, read the session with `getSession()` from `src/lib/session.ts`, inside a `<Suspense>` boundary.
+
+## Rivalries
+
+The database logic is in `src/lib/rivalry-helpers.ts` (what the tests exercise); `src/lib/rivalry-actions.ts` wraps it in server actions that read the session.
+
+- **Search** (on `/home`): type a username prefix, with or without `@`, at least 2 characters. Up to 10 onboarded, non-placeholder users other than yourself are listed, each with the right button: `Challenge`, `Pending`, `Accept` or `Open Rivalry`.
+- **Challenge**: creates a `pending` rivalry. If the other player had already challenged you, challenging back accepts it. A declined request can be sent again by either player (the same row is reused). An active or blocked pair is refused.
+- **Respond**: only the player who received a request can accept or decline it. **Cancel**: only the sender can, and it deletes the pending row.
+- **`/rivalry/[id]`**: visible only to the two members of an `active` rivalry. Everyone else gets a 404. Because a streamed page cannot change its status code, `src/proxy.ts` makes that decision before rendering, and the page checks again.
+
+Always build the pair with `canonicalPair()` so the lower uuid is `user_a` (see the a/b ordering rule below).
 
 ## Database scripts
 

@@ -1,0 +1,88 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { Suspense } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { type RivalryOpponent, getRivalryForMember } from "@/lib/rivalry-helpers";
+import { getSession } from "@/lib/session";
+
+export const metadata: Metadata = { title: "Rivalry | PESRIVALS" };
+
+export default function RivalryPage({ params }: PageProps<"/rivalry/[id]">) {
+  return (
+    <main className="flex flex-1 flex-col gap-6">
+      <Link
+        href="/home"
+        className="self-start text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+      >
+        ← Back to home
+      </Link>
+      <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+        <RivalryContent params={params} />
+      </Suspense>
+    </main>
+  );
+}
+
+// Reads the session and the URL, so it streams in behind the Suspense boundary.
+// src/proxy.ts runs the same membership check first so that a missing rivalry
+// is a real HTTP 404; this is the check that actually guards the data.
+async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "params">) {
+  const session = await getSession();
+  if (!session?.user?.id) redirect("/login");
+  if (!session.user.onboarded) redirect("/onboarding");
+
+  const { id } = await params;
+  const rivalry = await getRivalryForMember(session.user.id, id);
+  if (!rivalry) notFound();
+
+  return (
+    <>
+      <header className="flex flex-col gap-4">
+        <h1 className="sr-only">
+          @{rivalry.me.username} vs @{rivalry.opponent.username}
+        </h1>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <Side player={rivalry.me} label="You" />
+          <span className="font-heading text-3xl font-bold text-primary uppercase">vs</span>
+          <Side player={rivalry.opponent} label="Rival" />
+        </div>
+        <p className="text-center text-sm text-muted-foreground">
+          {rivalry.matchCount} {rivalry.matchCount === 1 ? "match" : "matches"} played
+        </p>
+      </header>
+
+      <Button disabled size="lg" className="h-12 w-full text-base font-semibold">
+        Upload Match Screenshot (Next Step)
+      </Button>
+
+      <Card>
+        <CardContent className="flex flex-col items-center gap-1 py-8 text-center">
+          <p className="font-heading text-2xl font-semibold tracking-wide uppercase">
+            No matches logged yet
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Your head-to-head results will show up here.
+          </p>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function Side({ player, label }: { player: RivalryOpponent; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-1 text-center">
+      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {label}
+      </span>
+      <span className="w-full truncate font-heading text-2xl font-semibold">
+        @{player.username}
+      </span>
+      <span className="w-full truncate text-sm text-muted-foreground">
+        {player.displayName}
+      </span>
+    </div>
+  );
+}

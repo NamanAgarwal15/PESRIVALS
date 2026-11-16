@@ -1,16 +1,22 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import {
+  ActiveRivalriesSection,
+  ChallengeSection,
+  IncomingRequestsSection,
+  SentRequestsSection,
+} from "@/components/rivalries/rivalry-sections";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { logoutAction } from "@/lib/auth-actions";
+import { getUserRivalries } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Home | PESRIVALS" };
 
 export default function HomePage() {
   return (
-    <main className="flex flex-1 flex-col gap-6">
+    <main className="flex flex-1 flex-col gap-8">
       <Suspense fallback={<HomeFallback />}>
         <HomeContent />
       </Suspense>
@@ -28,6 +34,10 @@ async function HomeContent() {
   if (!session?.user?.id) redirect("/login");
   if (!session.user.onboarded) redirect("/onboarding");
 
+  const { activeRivalries, incomingRequests, sentRequests } = await getUserRivalries(
+    session.user.id,
+  );
+
   return (
     <>
       <header className="flex items-center justify-between gap-4">
@@ -40,16 +50,10 @@ async function HomeContent() {
           </Button>
         </form>
       </header>
-      <Card>
-        <CardContent className="flex flex-col items-center gap-1 py-8 text-center">
-          <p className="font-heading text-2xl font-semibold tracking-wide uppercase">
-            No rivalries yet
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Your 1v1 rivalries will show up here.
-          </p>
-        </CardContent>
-      </Card>
+      <IncomingRequestsSection requests={incomingRequests} />
+      <ChallengeSection />
+      <SentRequestsSection requests={sentRequests} />
+      <ActiveRivalriesSection rivalries={activeRivalries} />
     </>
   );
 }
