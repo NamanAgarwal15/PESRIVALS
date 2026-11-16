@@ -40,6 +40,8 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     imageUrl: text("image_url"),
     isPlaceholder: boolean("is_placeholder").notNull().default(false),
+    // false only for Google sign-ups that still hold a temporary g_<hex> username.
+    onboarded: boolean("onboarded").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -49,8 +51,48 @@ export const users = pgTable(
   },
   (t) => [
     check("users_username_format", sql`${t.username} ~ '^[a-z0-9_]{3,20}$'`),
+    check(
+      "users_email_lowercase",
+      sql`${t.email} IS NULL OR ${t.email} = lower(${t.email})`,
+    ),
+    check(
+      "users_phone_e164",
+      sql`${t.phone} IS NULL OR ${t.phone} ~ '^\\+[1-9][0-9]{7,14}$'`,
+    ),
   ],
 );
+
+// One row per external identity (e.g. a Google account) linked to a user.
+export const oauthAccounts = pgTable(
+  "oauth_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("oauth_accounts_provider_account_unique").on(
+      t.provider,
+      t.providerAccountId,
+    ),
+  ],
+);
+
+// Brute-force counter for credentials login, keyed by "cred:<identifier>".
+export const loginThrottle = pgTable("login_throttle", {
+  key: text("key").primaryKey(),
+  failures: integer("failures").notNull().default(0),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+});
 
 // A pair of users can have only one rivalry. The lower uuid is ALWAYS user_a
 // (enforced by rivalries_user_order), so (user_a_id, user_b_id) is canonical.

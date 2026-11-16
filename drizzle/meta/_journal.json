@@ -8,6 +8,13 @@
       "when": 1794809271089,
       "tag": "0000_outstanding_the_hunter",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794811870539,
+      "tag": "0001_cool_nighthawk",
+      "breakpoints": true
     }
   ]
 }
