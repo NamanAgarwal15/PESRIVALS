@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${barlowCondensed.variable} dark h-full antialiased`}
     >
       <body className="flex min-h-dvh flex-col">
-        <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 pt-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pt-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] sm:px-6 lg:px-8">
           {children}
         </div>
         <Toaster />

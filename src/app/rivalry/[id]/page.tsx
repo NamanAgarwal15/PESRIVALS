@@ -58,12 +58,6 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
         </p>
       </header>
 
-      <UploadMatchPanel
-        rivalryId={rivalry.id}
-        myUsername={rivalry.me.username}
-        opponentUsername={rivalry.opponent.username}
-      />
-
       <RivalryDashboard
         rivalryId={rivalry.id}
         matches={analyticsMatches}
@@ -71,6 +65,13 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
         meName={rivalry.me.displayName}
         oppName={rivalry.opponent.displayName}
         opponentUsername={rivalry.opponent.username}
+        uploadSlot={
+          <UploadMatchPanel
+            rivalryId={rivalry.id}
+            myUsername={rivalry.me.username}
+            opponentUsername={rivalry.opponent.username}
+          />
+        }
       />
     </>
   );
