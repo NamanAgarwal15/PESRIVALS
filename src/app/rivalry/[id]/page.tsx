@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
-import { MatchList } from "@/components/matches/match-list";
 import { UploadMatchPanel } from "@/components/matches/upload-match-panel";
+import { RivalryDashboard } from "@/components/dashboard/rivalry-dashboard";
+import { getRivalryAnalyticsMatches } from "@/lib/career-stats";
 import { getRivalryMatches } from "@/lib/match-helpers";
 import { type RivalryOpponent, getRivalryForMember } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
@@ -38,7 +39,8 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
   const rivalry = await getRivalryForMember(session.user.id, id);
   if (!rivalry) notFound();
 
-  const matches = await getRivalryMatches(session.user.id, rivalry.id);
+  const matches = await getRivalryMatches(session.user.id, rivalry.id, 200);
+  const analyticsMatches = await getRivalryAnalyticsMatches(session.user.id, rivalry.id);
 
   return (
     <>
@@ -62,7 +64,14 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
         opponentUsername={rivalry.opponent.username}
       />
 
-      <MatchList matches={matches} opponentUsername={rivalry.opponent.username} />
+      <RivalryDashboard
+        rivalryId={rivalry.id}
+        matches={analyticsMatches}
+        displayMatches={matches}
+        meName={rivalry.me.displayName}
+        oppName={rivalry.opponent.displayName}
+        opponentUsername={rivalry.opponent.username}
+      />
     </>
   );
 }

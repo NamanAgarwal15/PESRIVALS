@@ -196,6 +196,7 @@ export type RivalryMatch = {
   outcome: MatchOutcome;
   /** "home" when the current user hosted, "away" when the opponent did. */
   venue: "home" | "away" | null;
+  needsReview: boolean;
   remark: string | null;
 };
 
@@ -220,6 +221,7 @@ export async function getRivalryMatches(
       userAGoals: matches.userAGoals,
       userBGoals: matches.userBGoals,
       decidedOnPens: matches.decidedOnPens,
+      needsReview: matches.needsReview,
       remark: matches.remark,
     })
     .from(matches)
@@ -239,6 +241,7 @@ export async function getRivalryMatches(
       myGoals,
       opponentGoals,
       decidedOnPens: row.decidedOnPens,
+      needsReview: row.needsReview,
       outcome: matchOutcome(myGoals, opponentGoals, row.decidedOnPens),
       venue: row.hostUserId === null ? null : row.hostUserId === currentUserId ? "home" : "away",
       remark: row.remark,

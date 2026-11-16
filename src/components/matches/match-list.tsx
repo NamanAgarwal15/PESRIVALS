@@ -78,6 +78,9 @@ function MatchCard({
           {match.decidedOnPens ? (
             <Tag className="bg-accent-pink/15 text-accent-pink">PENS</Tag>
           ) : null}
+          {match.needsReview ? (
+            <Tag className="bg-draw/15 text-draw">REVIEW</Tag>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">

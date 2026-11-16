@@ -12,7 +12,7 @@ export const proxy = auth(async (req) => {
   const user = req.auth?.user;
   const to = (path: string) => NextResponse.redirect(new URL(path, req.nextUrl));
 
-  if (pathname === "/home") {
+  if (pathname === "/home" || pathname === "/stats") {
     if (!user?.id) return to("/login");
     if (!user.onboarded) return to("/onboarding");
   } else if (pathname === "/onboarding") {
@@ -37,5 +37,5 @@ export const proxy = auth(async (req) => {
 });
 
 export const config = {
-  matcher: ["/home", "/onboarding", "/login", "/signup", "/rivalry/:path*"],
+  matcher: ["/home", "/onboarding", "/login", "/signup", "/stats", "/rivalry/:path*"],
 };
