@@ -78,10 +78,11 @@ export function GoalsTrendChart({
   teams?: ChartTeams;
 }) {
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barGap={2}>
+    <div className="h-56 w-full overflow-hidden md:h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barGap={2}>
         <CartesianGrid stroke={COLOR.grid} strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="matchNo" {...axisProps} />
+        <XAxis dataKey="matchNo" interval="preserveStartEnd" {...axisProps} />
         <YAxis {...axisProps} allowDecimals={false} />
         <Tooltip
           cursor={{ fill: "var(--muted)", fillOpacity: 0.4 }}
@@ -126,18 +127,20 @@ export function GoalsTrendChart({
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="myGoals" name={`${meName} goals`} fill={COLOR.me} radius={[3, 3, 0, 0]} />
         <Bar dataKey="oppGoals" name={`${oppName} goals`} fill={COLOR.opp} radius={[3, 3, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
 /** Chart 2: net rivalry lead over time with a dashed zero baseline. */
 export function MomentumChart({ series }: { series: TrendPoint[] }) {
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <AreaChart data={series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-        <CartesianGrid stroke={COLOR.grid} strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="matchNo" {...axisProps} />
+    <div className="h-56 w-full overflow-hidden md:h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+          <CartesianGrid stroke={COLOR.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="matchNo" interval="preserveStartEnd" {...axisProps} />
         <YAxis {...axisProps} allowDecimals={false} />
         <ReferenceLine y={0} stroke={COLOR.text} strokeDasharray="4 4" />
         <Tooltip
@@ -166,8 +169,9 @@ export function MomentumChart({ series }: { series: TrendPoint[] }) {
           fill={COLOR.diff}
           fillOpacity={0.25}
         />
-      </AreaChart>
-    </ResponsiveContainer>
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 // --- CHARTS 3 & 4 ---

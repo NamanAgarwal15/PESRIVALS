@@ -126,6 +126,15 @@ for (const row of rows) {
   const [aFouls, bFouls] = pair(row.namanFouls, row.ayushFouls);
   const [aCorners, bCorners] = pair(row.namanCorners, row.ayushCorners);
   const [aTackles, bTackles] = pair(row.namanTackles, row.ayushTackles);
+  // The 5 screenshot-only stats (21 matches; null for the other 10).
+  const [aOffsides, bOffsides] = pair(row.namanOffsides, row.ayushOffsides);
+  const [aFreeKicks, bFreeKicks] = pair(row.namanFreeKicks, row.ayushFreeKicks);
+  const [aCrosses, bCrosses] = pair(row.namanCrosses, row.ayushCrosses);
+  const [aInterceptions, bInterceptions] = pair(
+    row.namanInterceptions,
+    row.ayushInterceptions,
+  );
+  const [aSaves, bSaves] = pair(row.namanSaves, row.ayushSaves);
 
   await sql`
     INSERT INTO matches (
@@ -140,7 +149,12 @@ for (const row of rows) {
       user_a_successful_passes, user_b_successful_passes,
       user_a_fouls, user_b_fouls,
       user_a_corners, user_b_corners,
-      user_a_tackles, user_b_tackles
+      user_a_tackles, user_b_tackles,
+      user_a_offsides, user_b_offsides,
+      user_a_free_kicks, user_b_free_kicks,
+      user_a_crosses, user_b_crosses,
+      user_a_interceptions, user_b_interceptions,
+      user_a_saves, user_b_saves
     ) VALUES (
       ${rivalryId}, ${row.matchNo}, ${row.playedAt}, ${hostUserId}, ${namanId},
       'import', 'confirmed', ${row.needsReview}, ${row.excelRow},
@@ -153,7 +167,12 @@ for (const row of rows) {
       ${aSucc}, ${bSucc},
       ${aFouls}, ${bFouls},
       ${aCorners}, ${bCorners},
-      ${aTackles}, ${bTackles}
+      ${aTackles}, ${bTackles},
+      ${aOffsides}, ${bOffsides},
+      ${aFreeKicks}, ${bFreeKicks},
+      ${aCrosses}, ${bCrosses},
+      ${aInterceptions}, ${bInterceptions},
+      ${aSaves}, ${bSaves}
     )
   `;
   inserted++;
@@ -177,7 +196,18 @@ const v = (
       avg(user_b_shots) AS b_avg_shots,
       coalesce(sum(user_a_passes), 0)::int AS a_passes,
       coalesce(sum(user_a_successful_passes), 0)::int AS a_succ_passes,
-      count(*) FILTER (WHERE decided_on_pens)::int AS pens
+      count(*) FILTER (WHERE decided_on_pens)::int AS pens,
+      count(*) FILTER (WHERE user_a_offsides IS NOT NULL)::int AS extra_stats,
+      coalesce(sum(user_a_offsides), 0)::int AS a_offsides,
+      coalesce(sum(user_b_offsides), 0)::int AS b_offsides,
+      coalesce(sum(user_a_free_kicks), 0)::int AS a_free_kicks,
+      coalesce(sum(user_b_free_kicks), 0)::int AS b_free_kicks,
+      coalesce(sum(user_a_crosses), 0)::int AS a_crosses,
+      coalesce(sum(user_b_crosses), 0)::int AS b_crosses,
+      coalesce(sum(user_a_interceptions), 0)::int AS a_interceptions,
+      coalesce(sum(user_b_interceptions), 0)::int AS b_interceptions,
+      coalesce(sum(user_a_saves), 0)::int AS a_saves,
+      coalesce(sum(user_b_saves), 0)::int AS b_saves
     FROM matches
     WHERE rivalry_id = ${rivalryId} AND source = 'import'
   `
@@ -199,5 +229,18 @@ assertEq("ayush_avg_shots", Number(ayush(v.a_avg_shots, v.b_avg_shots)), 9.967, 
 assertEq("naman_total_passes", naman(v.a_passes, v.b_passes), 6022);
 assertEq("naman_successful_passes", naman(v.a_succ_passes, v.b_succ_passes), 4239);
 assertEq("pens_matches", v.pens, 1);
+
+// Enriched seed: the 21 screenshot-verified matches carry the 5 extra stats.
+assertEq("extra_stats_matches_count", v.extra_stats, 21);
+assertEq("naman_offsides", naman(v.a_offsides, v.b_offsides), 29);
+assertEq("ayush_offsides", ayush(v.a_offsides, v.b_offsides), 24);
+assertEq("naman_free_kicks", naman(v.a_free_kicks, v.b_free_kicks), 45);
+assertEq("ayush_free_kicks", ayush(v.a_free_kicks, v.b_free_kicks), 66);
+assertEq("naman_crosses", naman(v.a_crosses, v.b_crosses), 128);
+assertEq("ayush_crosses", ayush(v.a_crosses, v.b_crosses), 54);
+assertEq("naman_interceptions", naman(v.a_interceptions, v.b_interceptions), 735);
+assertEq("ayush_interceptions", ayush(v.a_interceptions, v.b_interceptions), 973);
+assertEq("naman_saves", naman(v.a_saves, v.b_saves), 78);
+assertEq("ayush_saves", ayush(v.a_saves, v.b_saves), 109);
 
 console.log("Seed complete: all verifications passed. (LOCAL TEST database)");

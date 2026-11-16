@@ -130,6 +130,7 @@ export function RivalryDashboard({
 }) {
   const [filters, setFilters] = useState<AnalyticsFilters>(DEFAULT_FILTERS);
   const [tab, setTab] = useState<Tab>("overview");
+  const [showFilters, setShowFilters] = useState(false);
 
   const hosts: { value: AnalyticsHostFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -179,11 +180,11 @@ export function RivalryDashboard({
   ].filter(Boolean);
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 sm:px-6 lg:px-8">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 overflow-x-hidden px-4 sm:px-6 lg:px-8">
       {/* Sticky header: tabs + global filters, shared by both tabs */}
       <div className="sticky top-0 z-20 -mx-4 flex flex-col gap-2 border-b bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex gap-1 rounded-full bg-secondary p-1">
+          <div className="grid w-full grid-cols-2 gap-1 rounded-full bg-secondary p-1 md:inline-flex md:w-auto">
             {(
               [
                 ["overview", "Overview"],
@@ -194,7 +195,7 @@ export function RivalryDashboard({
                 key={value}
                 type="button"
                 onClick={() => setTab(value)}
-                className={`rounded-full px-4 py-1.5 text-xs font-bold tracking-wide uppercase transition-colors ${
+                className={`rounded-full px-2 py-1.5 text-xs font-bold tracking-wide uppercase transition-colors md:px-4 ${
                   tab === value
                     ? "bg-primary text-primary-foreground"
                     : "text-secondary-foreground"
@@ -205,7 +206,7 @@ export function RivalryDashboard({
             ))}
           </div>
           {filtersActive ? (
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="hidden min-w-0 items-center gap-2 md:flex">
               <span className="hidden truncate rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground md:inline">
                 Showing {summary.played} {summary.played === 1 ? "match" : "matches"} ·{" "}
                 {activeSummary.join(" · ")}
@@ -220,7 +221,65 @@ export function RivalryDashboard({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-col gap-2">
+        {/* Mobile: compact collapsible filter drawer (md:hidden) */}
+        <div className="flex items-center gap-2 md:hidden">
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-semibold tracking-wide text-secondary-foreground"
+          >
+            Filters
+            {activeSummary.length > 0 ? (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                {activeSummary.length}
+              </span>
+            ) : null}
+            <span aria-hidden>{showFilters ? "▲" : "▼"}</span>
+          </button>
+          {activeSummary.length > 0 ? (
+            <>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {summary.played} matches · {activeSummary.join(" · ")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setFilters(DEFAULT_FILTERS)}
+                className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                Reset
+              </button>
+            </>
+          ) : null}
+        </div>
+        {showFilters ? (
+          <div className="flex flex-col gap-2 md:hidden">
+            <FilterRow
+              label="Window"
+              options={WINDOWS}
+              value={filters.window}
+              onChange={(v) => set({ window: v })}
+            />
+            <FilterRow
+              label="Venue"
+              options={hosts}
+              value={filters.host}
+              onChange={(v) => set({ host: v })}
+            />
+            <FilterRow
+              label="Result"
+              options={OUTCOMES}
+              value={filters.outcome}
+              onChange={(v) => set({ outcome: v })}
+            />
+            <FilterRow
+              label="Margin"
+              options={MARGINS}
+              value={filters.minMargin}
+              onChange={(v) => set({ minMargin: v })}
+            />
+          </div>
+        ) : null}
+        <div className="hidden flex-col gap-2 md:flex">
           <FilterRow
             label="Window"
             options={WINDOWS}
@@ -308,7 +367,7 @@ function OverviewTab({
               The overall record from your point of view ({meName} vs {oppName}).
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-col gap-4 p-3.5 md:p-6">
             <p className="text-center font-heading text-3xl font-bold tabular-nums">
               <span className="text-win">{summary.wins}</span>
               <span className="mx-2 text-muted-foreground">W – D – L</span>
@@ -325,7 +384,7 @@ function OverviewTab({
               <div className="bg-draw" style={{ width: `${(summary.draws / total) * 100}%` }} />
               <div className="bg-loss" style={{ width: `${(summary.losses / total) * 100}%` }} />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <Stat label="Win %" value={fmt(summary.winPct)} />
               <Stat
                 label="Goals (GF–GA)"
@@ -470,41 +529,68 @@ function OverviewTab({
             const myPct = sum > 0 && s.mine.avg !== null ? (s.mine.avg / sum) * 100 : 0;
             const digits = s.key === "possession" ? 0 : 1;
             const unlogged = s.mine.avg === null && s.theirs.avg === null;
+            const sample =
+              s.mine.count === 0
+                ? `— (${s.mine.count} matches)`
+                : `${s.mine.count} match${s.mine.count === 1 ? "" : "es"}`;
             return (
-              <div
-                key={s.key}
-                className="grid grid-cols-2 items-center gap-2 md:grid-cols-[1.4fr_1fr_2.5fr_1fr_1.4fr] md:gap-3"
-              >
-                <span className="text-sm font-medium md:text-base">{s.label}</span>
-                <span className="text-right font-semibold tabular-nums text-primary md:text-base">
-                  {fmt(s.mine.avg, digits)}
-                </span>
-                <div className="col-span-2 flex h-3 items-center overflow-hidden rounded-full bg-secondary md:col-span-1">
-                  {unlogged ? (
-                    <span className="w-full text-center text-[10px] text-muted-foreground">
-                      not recorded yet
+              <div key={s.key} className="contents">
+                {/* Mobile: crisp 2-line row (values line + tug-of-war bar) */}
+                <div className="flex flex-col gap-1.5 rounded-lg bg-secondary/40 p-2.5 md:hidden">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="w-14 text-left font-heading text-lg font-bold tabular-nums text-primary">
+                      {fmt(s.mine.avg, digits)}
                     </span>
-                  ) : (
-                    <>
-                      <div
-                        className="h-full bg-primary transition-all"
-                        style={{ width: `${myPct}%` }}
-                      />
-                      <div
-                        className="h-full flex-1 bg-accent-pink transition-all"
-                        style={{ width: `${100 - myPct}%` }}
-                      />
-                    </>
-                  )}
+                    <span className="min-w-0 flex-1 truncate text-center text-xs font-medium text-muted-foreground">
+                      {s.label}{" "}
+                      <span className="whitespace-nowrap">({sample.replace(" matches", "m").replace(" match", "m")})</span>
+                    </span>
+                    <span className="w-14 text-right font-heading text-lg font-bold tabular-nums text-accent-pink">
+                      {fmt(s.theirs.avg, digits)}
+                    </span>
+                  </div>
+                  <div className="flex h-2.5 overflow-hidden rounded-full bg-secondary">
+                    {unlogged ? (
+                      <span className="w-full text-center text-[10px] leading-2.5 text-muted-foreground">
+                        not recorded yet
+                      </span>
+                    ) : (
+                      <>
+                        <div className="h-full bg-primary" style={{ width: `${myPct}%` }} />
+                        <div className="h-full flex-1 bg-accent-pink" />
+                      </>
+                    )}
+                  </div>
                 </div>
-                <span className="col-span-2 text-sm font-semibold tabular-nums text-accent-pink md:col-span-1 md:text-left md:text-base">
-                  {fmt(s.theirs.avg, digits)}
-                </span>
-                <span className="col-span-2 text-xs text-muted-foreground md:col-span-1 md:text-right">
-                  {s.mine.count === 0
-                    ? `— (${s.mine.count} matches)`
-                    : `${s.mine.count} match${s.mine.count === 1 ? "" : "es"}`}
-                </span>
+                {/* Desktop row: unchanged */}
+                <div className="hidden items-center gap-3 md:grid md:grid-cols-[1.4fr_1fr_2.5fr_1fr_1.4fr]">
+                  <span className="text-sm font-medium md:text-base">{s.label}</span>
+                  <span className="text-right font-semibold tabular-nums text-primary md:text-base">
+                    {fmt(s.mine.avg, digits)}
+                  </span>
+                  <div className="flex h-3 items-center overflow-hidden rounded-full bg-secondary">
+                    {unlogged ? (
+                      <span className="w-full text-center text-[10px] text-muted-foreground">
+                        not recorded yet
+                      </span>
+                    ) : (
+                      <>
+                        <div
+                          className="h-full bg-primary transition-all"
+                          style={{ width: `${myPct}%` }}
+                        />
+                        <div
+                          className="h-full flex-1 bg-accent-pink transition-all"
+                          style={{ width: `${100 - myPct}%` }}
+                        />
+                      </>
+                    )}
+                  </div>
+                  <span className="font-semibold tabular-nums text-accent-pink md:text-left md:text-base">
+                    {fmt(s.theirs.avg, digits)}
+                  </span>
+                  <span className="text-right text-xs text-muted-foreground">{sample}</span>
+                </div>
               </div>
             );
           })}

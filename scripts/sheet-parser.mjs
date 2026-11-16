@@ -22,8 +22,53 @@ export const NEEDS_REVIEW_ROWS = new Set([13, 14, 15, 16]);
 /** Excel Row 17 (Match #12): draw decided on penalties. */
 export const PENS_ROW = 17;
 
+/**
+ * The 5 screenshot-only stats for the 21 matches whose original eFootball
+ * screenshots were extracted. Keyed by 1-indexed Excel row; every other row
+ * (16, 18-26) keeps all five stats as null. Tuple order:
+ * [namanOffsides, ayushOffsides, namanFreeKicks, ayushFreeKicks,
+ *  namanCrosses, ayushCrosses, namanInterceptions, ayushInterceptions,
+ *  namanSaves, ayushSaves]
+ */
+export const EXTRA_STATS_BY_ROW = {
+  6: [1, 2, 2, 5, 3, 2, 39, 37, 1, 2],
+  7: [2, 0, 3, 5, 4, 3, 40, 44, 3, 4],
+  8: [1, 2, 4, 6, 5, 2, 41, 48, 2, 5],
+  9: [1, 2, 2, 4, 10, 3, 30, 45, 1, 6],
+  10: [0, 1, 2, 1, 11, 4, 33, 46, 3, 6],
+  11: [2, 3, 4, 4, 7, 2, 38, 47, 3, 4],
+  13: [1, 1, 2, 1, 10, 2, 28, 32, 5, 0],
+  14: [2, 0, 0, 5, 8, 3, 42, 39, 8, 7],
+  15: [0, 2, 4, 0, 5, 5, 29, 43, 4, 4],
+  17: [1, 0, 2, 4, 2, 5, 53, 67, 7, 4],
+  27: [1, 1, 2, 1, 6, 4, 22, 38, 3, 9],
+  28: [1, 1, 1, 4, 1, 4, 37, 63, 6, 4],
+  29: [1, 3, 5, 3, 2, 1, 41, 50, 3, 5],
+  30: [3, 0, 0, 4, 7, 2, 35, 45, 4, 2],
+  31: [1, 0, 0, 1, 9, 0, 37, 42, 0, 6],
+  32: [5, 1, 1, 7, 10, 2, 35, 50, 8, 12],
+  33: [1, 1, 2, 3, 6, 4, 36, 60, 2, 3],
+  34: [2, 2, 5, 3, 6, 2, 23, 41, 3, 8],
+  35: [2, 0, 1, 3, 5, 1, 30, 48, 6, 6],
+  36: [0, 1, 2, 0, 4, 1, 35, 41, 1, 7],
+  37: [1, 1, 1, 2, 7, 2, 31, 47, 5, 5],
+};
+
 const NAMAN_FALLBACK_TEAM = "Belgium";
 const AYUSH_FALLBACK_TEAM = "FC Bayern München";
+
+const EXTRA_KEYS = [
+  "namanOffsides",
+  "ayushOffsides",
+  "namanFreeKicks",
+  "ayushFreeKicks",
+  "namanCrosses",
+  "ayushCrosses",
+  "namanInterceptions",
+  "ayushInterceptions",
+  "namanSaves",
+  "ayushSaves",
+];
 
 function num(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -87,6 +132,15 @@ export function parseMatchLog(filePath = SHEET_FILE) {
       ayushCorners: num(row[25]),
       namanTackles: num(row[26]),
       ayushTackles: num(row[27]),
+      // The 5 screenshot-only stats, from the extracted original screenshots.
+      ...(EXTRA_STATS_BY_ROW[excelRow] ?? [null, null, null, null, null, null, null, null, null, null])
+        .reduce(
+          (acc, v, i) => {
+            acc[EXTRA_KEYS[i]] = v;
+            return acc;
+          },
+          Object.create(null),
+        ),
       needsReview: NEEDS_REVIEW_ROWS.has(excelRow),
       decidedOnPens: excelRow === PENS_ROW,
       // "EXAMPLE..." remark on Row 6 is template text, not real data.

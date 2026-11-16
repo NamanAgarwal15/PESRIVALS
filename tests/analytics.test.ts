@@ -35,6 +35,11 @@ function rowToMatch(r: (typeof rows)[number]): AnalyticsMatch {
   my.passes = r.namanPasses;
   my.successful_passes = r.namanSuccessfulPasses;
   my.tackles = r.namanTackles;
+  my.offsides = r.namanOffsides ?? null;
+  my.free_kicks = r.namanFreeKicks ?? null;
+  my.crosses = r.namanCrosses ?? null;
+  my.interceptions = r.namanInterceptions ?? null;
+  my.saves = r.namanSaves ?? null;
   opp.possession = r.namanPossession === null ? null : 100 - r.namanPossession;
   opp.shots = r.ayushShots;
   opp.shots_on_target = r.ayushShotsOnTarget;
@@ -43,6 +48,11 @@ function rowToMatch(r: (typeof rows)[number]): AnalyticsMatch {
   opp.passes = r.ayushPasses;
   opp.successful_passes = r.ayushSuccessfulPasses;
   opp.tackles = r.ayushTackles;
+  opp.offsides = r.ayushOffsides ?? null;
+  opp.free_kicks = r.ayushFreeKicks ?? null;
+  opp.crosses = r.ayushCrosses ?? null;
+  opp.interceptions = r.ayushInterceptions ?? null;
+  opp.saves = r.ayushSaves ?? null;
   return {
     matchNo: r.matchNo,
     playedAt: r.playedAt,
@@ -92,8 +102,20 @@ describe("sheet parsing", () => {
     // Row 17 (match 11, 6-6) is the pens match.
     expect(matches[10].decidedOnPens).toBe(true);
     expect(matches[10].myGoals).toBe(6);
-    // Screenshot-only stats are never present in the sheet.
-    expect(matches.every((m) => m.my.offsides === null && m.my.saves === null)).toBe(true);
+    // Screenshot-only stats exist for exactly the 21 extracted matches.
+    const extra = matches.filter((m) => m.my.offsides !== null);
+    expect(extra).toHaveLength(21);
+    expect(matches.filter((m) => m.my.offsides === null && m.my.saves === null)).toHaveLength(10);
+    expect(extra.reduce((s, m) => s + (m.my.offsides ?? 0), 0)).toBe(29);
+    expect(extra.reduce((s, m) => s + (m.opp.offsides ?? 0), 0)).toBe(24);
+    expect(extra.reduce((s, m) => s + (m.my.free_kicks ?? 0), 0)).toBe(45);
+    expect(extra.reduce((s, m) => s + (m.opp.free_kicks ?? 0), 0)).toBe(66);
+    expect(extra.reduce((s, m) => s + (m.my.crosses ?? 0), 0)).toBe(128);
+    expect(extra.reduce((s, m) => s + (m.opp.crosses ?? 0), 0)).toBe(54);
+    expect(extra.reduce((s, m) => s + (m.my.interceptions ?? 0), 0)).toBe(735);
+    expect(extra.reduce((s, m) => s + (m.opp.interceptions ?? 0), 0)).toBe(973);
+    expect(extra.reduce((s, m) => s + (m.my.saves ?? 0), 0)).toBe(78);
+    expect(extra.reduce((s, m) => s + (m.opp.saves ?? 0), 0)).toBe(109);
     // Average shots over the 30 stat matches.
     const shotMatches = matches.filter((m) => m.my.shots !== null);
     expect(shotMatches).toHaveLength(30);
@@ -185,10 +207,12 @@ describe("stat comparison", () => {
     expect(shots.mine.count).toBe(30);
     expect(shots.mine.avg).toBeCloseTo(16.067, 2);
     expect(shots.theirs.avg).toBeCloseTo(9.967, 2);
-    // Screenshot-only stats show as unlogged.
+    // Enriched screenshot stats average over their 21 non-null matches only.
     const offsides = c.stats.find((s) => s.key === "offsides")!;
-    expect(offsides.mine.avg).toBeNull();
-    expect(offsides.mine.count).toBe(0);
+    expect(offsides.mine.count).toBe(21);
+    expect(offsides.mine.avg).toBeCloseTo(29 / 21, 3); // ≈ 1.4
+    const saves = c.stats.find((s) => s.key === "saves")!;
+    expect(saves.theirs.avg).toBeCloseTo(109 / 21, 3);
   });
 
   it("computes shot / goal conversion / pass accuracy rates", () => {
