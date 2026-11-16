@@ -399,7 +399,9 @@ describe("respondToRivalryRequest", () => {
     const reopened = await rivalryRow(id);
     expect(reopened).toMatchObject({ status: "pending", requestedBy: b.id, acceptedAt: null });
     expect([reopened.userAId, reopened.userBId]).toEqual([original.userAId, original.userBId]);
-    expect(reopened.createdAt.getTime()).toBeGreaterThanOrEqual(original.createdAt.getTime());
+    // createdAt is reset from the app clock; the original came from the database
+    // clock. Allow for skew between the two machines.
+    expect(reopened.createdAt.getTime()).toBeGreaterThanOrEqual(original.createdAt.getTime() - 5_000);
     expect(await rowsBetween(a.id, b.id)).toHaveLength(1);
 
     // And now it is the original sender who has to answer.

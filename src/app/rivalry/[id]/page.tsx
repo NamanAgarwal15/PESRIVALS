@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { MatchList } from "@/components/matches/match-list";
+import { UploadMatchPanel } from "@/components/matches/upload-match-panel";
+import { getRivalryMatches } from "@/lib/match-helpers";
 import { type RivalryOpponent, getRivalryForMember } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
 
@@ -37,6 +38,8 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
   const rivalry = await getRivalryForMember(session.user.id, id);
   if (!rivalry) notFound();
 
+  const matches = await getRivalryMatches(session.user.id, rivalry.id);
+
   return (
     <>
       <header className="flex flex-col gap-4">
@@ -53,20 +56,13 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
         </p>
       </header>
 
-      <Button disabled size="lg" className="h-12 w-full text-base font-semibold">
-        Upload Match Screenshot (Next Step)
-      </Button>
+      <UploadMatchPanel
+        rivalryId={rivalry.id}
+        myUsername={rivalry.me.username}
+        opponentUsername={rivalry.opponent.username}
+      />
 
-      <Card>
-        <CardContent className="flex flex-col items-center gap-1 py-8 text-center">
-          <p className="font-heading text-2xl font-semibold tracking-wide uppercase">
-            No matches logged yet
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Your head-to-head results will show up here.
-          </p>
-        </CardContent>
-      </Card>
+      <MatchList matches={matches} opponentUsername={rivalry.opponent.username} />
     </>
   );
 }

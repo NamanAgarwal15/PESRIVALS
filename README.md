@@ -53,8 +53,8 @@ npm test
 | --- | --- | --- |
 | `DATABASE_URL` | App runtime queries (pooled connection) | `.env.local` for local dev; Vercel project settings for deployments |
 | `DATABASE_URL_UNPOOLED` | Local migrations (direct connection) | `.env.local` |
-| `GEMINI_API_KEY_1` | Stored for a later feature; no code reads it yet | `.env.local` |
-| `GEMINI_API_KEY_2` | Stored for a later feature; no code reads it yet | `.env.local` |
+| `GEMINI_API_KEY_1` | Reads match screenshots (first key tried) | `.env.local`; Vercel project settings |
+| `GEMINI_API_KEY_2` | Reads match screenshots (fallback key) | `.env.local`; Vercel project settings |
 | `AUTH_SECRET` | Signs and encrypts the session cookie. Use a different value per environment | `.env.local`; Vercel project settings |
 | `AUTH_GOOGLE_ID` | Google OAuth client id (optional) | `.env.local`; Vercel project settings |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret (optional) | `.env.local`; Vercel project settings |
@@ -105,6 +105,15 @@ The database logic is in `src/lib/rivalry-helpers.ts` (what the tests exercise);
 - **`/rivalry/[id]`**: visible only to the two members of an `active` rivalry. Everyone else gets a 404. Because a streamed page cannot change its status code, `src/proxy.ts` makes that decision before rendering, and the page checks again.
 
 Always build the pair with `canonicalPair()` so the lower uuid is `user_a` (see the a/b ordering rule below).
+
+## Logging matches from screenshots
+
+On `/rivalry/[id]` either player taps **Add Match Screenshot**, uploads the eFootball Full Time stats screen, checks the read-only numbers, says which side they were (Left or Right) and who hosted (Home or Away), optionally ticks "Decided on penalties" and adds a remark, then saves.
+
+- **Extraction** (`POST /api/rivalry/[id]/extract`, logic in `src/lib/gemini-extract.ts`): the image goes to Gemini over plain `fetch` with a JSON schema, and is never stored. Each model is tried with `GEMINI_API_KEY_1` then `GEMINI_API_KEY_2`; HTTP 404/429/5xx, timeouts and unusable JSON move on to the next combination. PNG, JPEG and WEBP up to 8 MB, checked by file signature. Keys are sent in a header and never logged or returned.
+- **Model list**: `GEMINI_MODELS` in `src/lib/gemini-extract.ts`. Google retires models, and a retired one shows up in the server log as `[gemini] <model> with KEY_n failed: HTTP 404`. List what a key can use with `GET https://generativelanguage.googleapis.com/v1beta/models`.
+- **Saving** (`saveExtractedMatch`, logic in `src/lib/match-helpers.ts`): the payload is re-validated on the server with the same rules as the database CHECKs. The side the player picked is written to their own `user_a_*` or `user_b_*` columns (lower uuid is `user_a`), so stats never swap sides. `match_no` is the next number in the rivalry, retried on a collision.
+- **Outcome rule**: a match decided on penalties is always a draw, whatever the score (`matchOutcome` in `src/lib/match-stats.ts`).
 
 ## Database scripts
 
