@@ -6,7 +6,7 @@
 // Never prints a connection string, username, password or database name.
 
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 
 const target = process.argv[2];
@@ -52,8 +52,9 @@ if (target === "live") {
   console.log(new URL(url).hostname.slice(-12));
 }
 
-const require = createRequire(import.meta.url);
-const drizzleKitBin = require.resolve("drizzle-kit/bin.cjs");
+const drizzleKitBin = fileURLToPath(
+  new URL("../node_modules/drizzle-kit/bin.cjs", import.meta.url),
+);
 
 const result = spawnSync(process.execPath, [drizzleKitBin, "migrate"], {
   stdio: "inherit",

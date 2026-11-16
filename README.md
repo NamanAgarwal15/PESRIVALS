@@ -82,10 +82,47 @@ npm run db:migrate:local
 npm run db:migrate:live -- --confirm-live
 ```
 
-- `db:generate` creates migration files from `src/db/schema.ts` (currently empty).
+- `db:generate` creates migration files from `src/db/schema.ts`.
 - `db:migrate:local` applies migrations to the LOCAL TEST database using `DATABASE_URL_UNPOOLED` from `.env.local`.
 - `db:migrate:live` applies migrations to the LIVE database using `LIVE_DATABASE_URL_UNPOOLED` from `.env.live.local`. It refuses to run without `--confirm-live`, and that check happens before any file is loaded or connection is attempted. When it runs, it prints the word `LIVE` and the last 12 characters of the hostname so you can confirm the target.
 
 ## Theme
 
 All colours are CSS variables defined in `src/app/globals.css`. Do not hard-code hex values anywhere else; use the Tailwind tokens (`bg-primary`, `text-muted-foreground`, `text-win`, `bg-accent-pink`, and so on). Headings use Barlow Condensed and body text uses Inter, both loaded with `next/font`.
+
+## Database
+
+The schema lives in `src/db/schema.ts`; migrations are generated into `./drizzle` and committed.
+
+### Tables
+
+- **`users`**: one row per person. `username` is unique and must match `^[a-z0-9_]{3,20}$`. `email` and `phone` are optional but unique. `is_placeholder` marks a user created on someone's behalf who has not signed up yet.
+- **`rivalries`**: a 1v1 pairing of two users, with a `status` (`pending`, `active`, `declined`, `blocked`), who requested it (`requested_by`), and a public flag per side (`a_public`, `b_public`).
+- **`matches`**: one row per match in a rivalry, numbered by `match_no` (1-based, unique within the rivalry). Holds each side's team, goals, and 13 optional stats per side (`user_a_<stat>` / `user_b_<stat>`), plus `source` (`import`, `screenshot`) and `status` (`confirmed`, `pending`, `disputed`).
+
+Deleting a user deletes their rivalries, and deleting a rivalry deletes its matches.
+
+### The a/b ordering rule
+
+A pair of users can have only one rivalry. To guarantee that, the user with the **lower uuid is always `user_a`** and the other is `user_b`. The database enforces this itself (`CHECK user_a_id < user_b_id` plus a unique constraint on the pair), so code must sort the two ids before inserting a rivalry.
+
+On a match, `user_a_*` and `user_b_*` columns always refer to the rivalry's `user_a` and `user_b`. They do not mean home/away or "me/opponent"; use `host_user_id` for who hosted.
+
+The database also rejects: a `requested_by` who is not one of the two users, goals outside 0 to 99, possession outside 0 to 100, shots on target above shots, and successful passes above passes. Stats left empty (NULL) pass these checks.
+
+### Changing the schema
+
+```powershell
+npm run db:generate
+npm run db:migrate:local
+```
+
+Edit `src/db/schema.ts`, generate a migration, read the generated SQL in `./drizzle`, then apply it to the LOCAL TEST database. Commit the migration files with the schema change.
+
+### Live database
+
+The LIVE database has **not** been migrated yet; it has no tables. When ready:
+
+```powershell
+npm run db:migrate:live -- --confirm-live
+```
