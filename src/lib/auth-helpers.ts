@@ -11,6 +11,10 @@ import { loginThrottle, oauthAccounts, users } from "@/db/schema";
 
 export const GENERIC_LOGIN_ERROR = "Incorrect login details";
 
+/** Shown when the database itself is unreachable during sign-up. */
+export const GENERIC_SIGNUP_ERROR =
+  "Could not create your account right now. Please try again in a moment.";
+
 export const BCRYPT_COST = 12;
 export const THROTTLE_MAX_FAILURES = 5;
 export const THROTTLE_WINDOW_MINUTES = 15;
@@ -214,15 +218,24 @@ export async function signUpUser(input: SignUpInput): Promise<SignUpResult> {
 
   // Friendly per-field messages. The unique constraints below are what
   // actually guarantee uniqueness if two sign-ups race.
-  const [byUsername, byEmail, byPhone] = await Promise.all([
-    db.select({ id: users.id }).from(users).where(eq(users.username, username)),
-    email
-      ? db.select({ id: users.id }).from(users).where(eq(users.email, email))
-      : [],
-    phone
-      ? db.select({ id: users.id }).from(users).where(eq(users.phone, phone))
-      : [],
-  ]);
+  let byUsername: { id: string }[] = [];
+  let byEmail: { id: string }[] = [];
+  let byPhone: { id: string }[] = [];
+  try {
+    [byUsername, byEmail, byPhone] = await Promise.all([
+      db.select({ id: users.id }).from(users).where(eq(users.username, username)),
+      email
+        ? db.select({ id: users.id }).from(users).where(eq(users.email, email))
+        : [],
+      phone
+        ? db.select({ id: users.id }).from(users).where(eq(users.phone, phone))
+        : [],
+    ]);
+  } catch {
+    // e.g. the database is unreachable or not migrated yet: show a clean
+    // error instead of an unhandled server crash.
+    return { ok: false, errors: { form: GENERIC_SIGNUP_ERROR } };
+  }
   const errors: FieldErrors = {};
   if (byUsername.length) errors.username = "That username is already taken";
   if (byEmail.length) errors.email = "That email is already in use";
@@ -248,7 +261,8 @@ export async function signUpUser(input: SignUpInput): Promise<SignUpResult> {
   } catch (err) {
     const dup = uniqueViolation(err);
     if (dup) return { ok: false, errors: duplicateFieldErrors(dup.constraint) };
-    throw err;
+    // Any other database failure becomes a clean form error too.
+    return { ok: false, errors: { form: GENERIC_SIGNUP_ERROR } };
   }
 }
 
