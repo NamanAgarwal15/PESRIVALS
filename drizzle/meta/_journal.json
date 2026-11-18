@@ -22,6 +22,13 @@
       "when": 1794943898532,
       "tag": "0002_melted_emma_frost",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794991633539,
+      "tag": "0003_admin_leaderboard_otp",
+      "breakpoints": true
     }
   ]
 }

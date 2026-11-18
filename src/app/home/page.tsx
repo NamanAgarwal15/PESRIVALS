@@ -11,6 +11,8 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { logoutAction, linkGoogleAction } from "@/lib/auth-actions";
+import { SettingsCard } from "@/components/account/settings-card";
+import { getAnnouncement } from "@/lib/admin";
 import { getAccountSecurity, isGoogleEnabled } from "@/lib/auth-helpers";
 import { getUserRivalries } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
@@ -41,13 +43,25 @@ async function HomeContent() {
     session.user.id,
   );
   const security = await getAccountSecurity(session.user.id);
+  const announcement = await getAnnouncement();
 
   return (
     <>
+      {announcement ? (
+        <p role="status" className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm">
+          {announcement}
+        </p>
+      ) : null}
       <header className="flex items-center justify-between gap-4">
         <h1 className="min-w-0 truncate text-4xl font-bold tracking-wide">
           Hi @{session.user.username}
         </h1>
+        <nav className="flex items-center gap-3 text-sm">
+          <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground">Leaderboard</Link>
+          {session.user.role === "admin" ? (
+            <Link href="/admin" className="text-xs text-muted-foreground/70 hover:text-foreground">Admin</Link>
+          ) : null}
+        </nav>
         <form action={logoutAction}>
           <Button type="submit" variant="outline" size="lg" className="h-10 px-4">
             Log out
@@ -94,6 +108,20 @@ async function HomeContent() {
           </CardContent>
         </Card>
       ) : null}
+      {security ? (
+        <SettingsCard
+          email={security.email}
+          phone={security.phone}
+          publicLeaderboard={security.publicLeaderboard}
+        />
+      ) : null}
+      <Link
+        href="/leaderboard"
+        className="flex items-center justify-between gap-3 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10 transition-colors hover:bg-secondary"
+      >
+        <span className="font-heading text-lg font-semibold tracking-wide uppercase">Global Leaderboard</span>
+        <span className="text-primary" aria-hidden>→</span>
+      </Link>
       <Link
         href="/stats"
         className="flex items-center justify-between gap-3 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10 transition-colors hover:bg-secondary"

@@ -9,6 +9,7 @@ import {
   resolveGoogleUser,
   verifyCredentials,
 } from "@/lib/auth-helpers";
+import { verifyOtp } from "@/lib/otp";
 
 const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60;
 
@@ -20,6 +21,9 @@ function applyUser(token: JWT, user: AuthUser): JWT {
   token.onboarded = user.onboarded;
   token.name = user.displayName;
   token.picture = user.imageUrl;
+  token.role = user.role;
+  token.suspended = user.suspended;
+  token.publicLeaderboard = user.publicLeaderboard;
   return token;
 }
 
@@ -49,6 +53,34 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
         };
       },
     }),
+    // 6-digit one-time-code login (hashed in the otp_codes table).
+    Credentials({
+      id: "otp",
+      credentials: {
+        identifier: { label: "Email or phone" },
+        code: { label: "6-digit code", type: "text" },
+      },
+      async authorize(credentials) {
+        if (
+          typeof credentials?.identifier !== "string" ||
+          typeof credentials?.code !== "string"
+        ) {
+          return null;
+        }
+        const result = await verifyOtp(credentials.identifier, credentials.code);
+        if (!result.ok) return null;
+        const user = await getAuthUserById(result.userId);
+        if (!user || user.suspended) return null;
+        return {
+          id: user.id,
+          name: user.displayName,
+          image: user.imageUrl,
+          username: user.username,
+          displayName: user.displayName,
+          onboarded: user.onboarded,
+        };
+      },
+    }),
     // Google is only registered when both variables are set.
     ...(isGoogleEnabled() ? [Google] : []),
   ],
@@ -66,13 +98,22 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
         return applyUser(token, dbUser);
       }
 
-      if (account?.provider === "credentials" && user?.id) {
+      if (
+        (account?.provider === "credentials" || account?.provider === "otp") &&
+        user?.id
+      ) {
+        // Role/suspension come from the database, never from the sign-in payload.
+        const fresh = await getAuthUserById(user.id);
+        if (fresh) return applyUser(token, fresh);
         return applyUser(token, {
           id: user.id,
           username: user.username ?? "",
           displayName: user.displayName ?? "",
           onboarded: user.onboarded ?? true,
           imageUrl: user.image ?? null,
+          role: "user",
+          suspended: false,
+          publicLeaderboard: true,
         });
       }
 
@@ -89,6 +130,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       session.user.username = token.username ?? "";
       session.user.displayName = token.displayName ?? "";
       session.user.onboarded = token.onboarded ?? false;
+      session.user.role = token.role === "admin" ? "admin" : "user";
       return session;
     },
   },

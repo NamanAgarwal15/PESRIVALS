@@ -4,19 +4,24 @@ import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { Resend } from "resend";
+import { eq } from "drizzle-orm";
 import { auth, signIn, signOut, unstable_update } from "@/auth";
+import { db } from "@/db";
+import { users } from "@/db/schema";
 import {
   BCRYPT_COST,
   type FieldErrors,
   GENERIC_LOGIN_ERROR,
   claimUsername,
   isGoogleEnabled,
+  normalizePhone,
   passwordSchema,
   signUpUser,
 } from "@/lib/auth-helpers";
 import { applyCountryCode, DEFAULT_COUNTRY_CODE } from "@/lib/country-codes";
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { createPasswordResetToken, resetPasswordWithToken } from "@/lib/password-reset";
+import { sendOtp } from "@/lib/otp";
 
 const text = (formData: FormData, name: string) => {
   const value = formData.get(name);
@@ -53,6 +58,16 @@ export async function signUpAction(
   const phone = values.phone
     ? applyCountryCode(values.phone, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
     : values.phone;
+  const agreed = formData.get("agree") === "true";
+  if (!agreed) {
+    return {
+      errors: {
+        agree:
+          "Please agree to the Terms & Privacy Policy and the public leaderboard consent.",
+      },
+      values,
+    };
+  }
 
   // Rate limit: max 5 signups per 15 minutes per username bucket.
   const rl = await consumeRateLimit(
@@ -223,4 +238,108 @@ export async function resetPasswordAction(
  */
 export async function linkGoogleAction(): Promise<void> {
   await signIn("google", { redirectTo: "/home" });
+}
+
+// ---------------------------------------------------------------------------
+// OTP login
+// ---------------------------------------------------------------------------
+
+export type OtpSendState = { ok: boolean; message: string };
+
+/** Sends a 6-digit OTP to an email or phone identifier. Non-enumerating. */
+export async function sendOtpAction(formData: FormData): Promise<OtpSendState> {
+  const raw = text(formData, "identifier").trim();
+  const identifier = /^\+?[0-9][0-9\s()-]{6,}$/.test(raw)
+    ? applyCountryCode(raw, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
+    : raw;
+  if (!identifier) return { ok: false, message: "Enter your email or phone number." };
+  try {
+    const result = await sendOtp(identifier);
+    if (!result.ok) {
+      if (result.code === "rate_limited") {
+        return { ok: false, message: "Too many code requests. Try again in a few minutes." };
+      }
+      if (result.code === "send_failed") {
+        return {
+          ok: false,
+          message: "Could not send the code right now. Try again or use your password.",
+        };
+      }
+    }
+  } catch {
+    // Delivery failures look identical to successes: never enumerate accounts.
+  }
+  return {
+    ok: true,
+    message:
+      "If an account exists with those details, a 6-digit code has been sent. It expires in 10 minutes.",
+  };
+}
+
+export async function loginWithOtpAction(formData: FormData): Promise<void> {
+  const raw = text(formData, "identifier").trim();
+  const identifier = /^\+?[0-9][0-9\s()-]{6,}$/.test(raw)
+    ? applyCountryCode(raw, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
+    : raw;
+  await signIn("otp", {
+    identifier,
+    code: text(formData, "code").trim(),
+    redirectTo: "/home",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Account settings (/home)
+// ---------------------------------------------------------------------------
+
+export type AccountSettingsState = {
+  message?: string;
+  errors?: FieldErrors;
+  values?: { email: string; phone: string; publicLeaderboard: boolean };
+};
+
+/** Lets a logged-in user add/update their recovery email, phone and leaderboard visibility. */
+export async function updateAccountSettingsAction(
+  _prev: AccountSettingsState,
+  formData: FormData,
+): Promise<AccountSettingsState> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const email = text(formData, "email").trim().toLowerCase();
+  const rawPhone = text(formData, "phone").trim();
+  const phone = rawPhone
+    ? applyCountryCode(rawPhone, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
+    : "";
+  const publicLeaderboard = formData.get("publicLeaderboard") === "true";
+  const values = { email, phone: rawPhone, publicLeaderboard };
+
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { errors: { email: "Enter a valid email address." }, values };
+  }
+  const e164 = rawPhone ? normalizePhone(phone) : null;
+  if (rawPhone && !e164) {
+    return { errors: { phone: "Enter a valid phone number." }, values };
+  }
+
+  try {
+    await db
+      .update(users)
+      .set({
+        email,
+        ...(e164 ? { phone: e164 } : {}), // blank keeps the existing number
+        publicLeaderboard,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, session.user.id));
+  } catch {
+    // Unique violation: the email/phone is already used by another account.
+    return {
+      errors: { form: "That email or phone is already used by another account." },
+      values,
+    };
+  }
+
+  await unstable_update({});
+  return { message: "Account settings saved.", values };
 }

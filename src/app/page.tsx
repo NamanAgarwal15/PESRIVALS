@@ -24,6 +24,9 @@ export default function Landing() {
           Track your eFootball rivalries, match by match.
         </p>
       </div>
+      <Link href="/leaderboard" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+        View the global leaderboard
+      </Link>
       <div className="flex min-h-27 w-full flex-col gap-3">
         <Suspense fallback={null}>
           <LandingActions />

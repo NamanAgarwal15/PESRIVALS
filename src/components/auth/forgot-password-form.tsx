@@ -2,9 +2,8 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
-import { CountryCodeSelect } from "./country-code-select";
 import { type ForgotPasswordState, forgotPasswordAction } from "@/lib/auth-actions";
-import { Field } from "./form-parts";
+import { PhoneField } from "./form-parts";
 
 const initialState: ForgotPasswordState = {};
 
@@ -18,22 +17,17 @@ export function ForgotPasswordForm() {
           {state.message}
         </p>
       ) : null}
-      <div className="flex gap-2">
-        <CountryCodeSelect />
-        <div className="flex-1">
-          <Field
-            label="Email or phone"
-            name="identifier"
-            type="text"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            hint="We send a reset link to your email if the account exists."
-            defaultValue={state.values?.identifier ?? ""}
-            required
-          />
-        </div>
-      </div>
+      <PhoneField
+        label="Email or phone"
+        name="identifier"
+        type="tel"
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        hint="Email works as-is; for a phone number pick its country code. We email a reset link."
+        defaultValue={state.values?.identifier ?? ""}
+        required
+      />
       <Button
         type="submit"
         size="lg"

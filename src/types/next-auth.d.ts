@@ -7,6 +7,7 @@ declare module "next-auth" {
       username: string;
       displayName: string;
       onboarded: boolean;
+      role: "user" | "admin";
     } & DefaultSession["user"];
   }
 
@@ -24,5 +25,8 @@ declare module "next-auth/jwt" {
     username?: string;
     displayName?: string;
     onboarded?: boolean;
+    role?: "user" | "admin";
+    suspended?: boolean;
+    publicLeaderboard?: boolean;
   }
 }

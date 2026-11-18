@@ -24,6 +24,7 @@ async function makeUser(label: string) {
     displayName: "Security Test",
     password: "hunter2pass1",
     email: addr,
+    phone: `+9198${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`,
   });
   if (!result.ok) throw new Error(`signup failed: ${JSON.stringify(result.errors)}`);
   createdUserIds.add(result.user.id);

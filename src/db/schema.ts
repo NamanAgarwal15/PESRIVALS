@@ -42,6 +42,12 @@ export const users = pgTable(
     isPlaceholder: boolean("is_placeholder").notNull().default(false),
     // false only for Google sign-ups that still hold a temporary g_<hex> username.
     onboarded: boolean("onboarded").notNull().default(true),
+    // RBAC: only 'user' and 'admin'. Admins see /admin.
+    role: text("role").notNull().default("user"),
+    // Aggregated career stats may appear on the public leaderboard.
+    publicLeaderboard: boolean("public_leaderboard").notNull().default(true),
+    // Suspended accounts cannot log in and are hidden from the leaderboard.
+    suspended: boolean("suspended").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -121,6 +127,37 @@ export const passwordResetTokens = pgTable(
   },
   (t) => [index("password_reset_tokens_hash_idx").on(t.tokenHash)],
 );
+
+// One-time 6-digit login/recovery codes. Only the SHA-256 hash of the code is
+// stored; max 3 verification attempts, 10 minute expiry, single use.
+export const otpCodes = pgTable(
+  "otp_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(), // 'email' | 'phone'
+    identifier: text("identifier").notNull(), // email address or E.164 phone
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("otp_codes_identifier_idx").on(t.identifier)],
+);
+
+// Small key/value settings store (e.g. the global announcement banner).
+export const siteSettings = pgTable("site_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 // A pair of users can have only one rivalry. The lower uuid is ALWAYS user_a
 // (enforced by rivalries_user_order), so (user_a_id, user_b_id) is canonical.

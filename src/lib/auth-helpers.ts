@@ -68,6 +68,9 @@ export type AuthUser = {
   displayName: string;
   onboarded: boolean;
   imageUrl: string | null;
+  role: "user" | "admin";
+  suspended: boolean;
+  publicLeaderboard: boolean;
 };
 
 type UserRow = typeof users.$inferSelect;
@@ -79,6 +82,9 @@ function toAuthUser(row: UserRow): AuthUser {
     displayName: row.displayName,
     onboarded: row.onboarded,
     imageUrl: row.imageUrl,
+    role: row.role === "admin" ? "admin" : "user",
+    suspended: row.suspended,
+    publicLeaderboard: row.publicLeaderboard,
   };
 }
 
@@ -160,16 +166,29 @@ export const signUpSchema = z.object({
       .nullable(),
   ),
 }).superRefine((data, ctx) => {
-  // New signups need at least one recovery channel. Existing live users
-  // (signed up before this rule) are unaffected: this only runs on signup.
-  if (!data.email && !data.phone) {
+  // New signups must provide BOTH recovery channels. Existing live users who
+  // signed up before this rule keep their accounts and can add the missing
+  // channel from /home (Account Settings) — this only runs on new signups.
+  if (!data.email) {
     ctx.addIssue({
       code: "custom",
-      path: ["form"],
-      message:
-        "Please enter either an email address or a phone number for account recovery.",
+      path: ["email"],
+      message: "Enter an email address for account recovery.",
     });
   }
+  if (!data.phone) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["phone"],
+      message: "Enter a phone number for account recovery.",
+    });
+  }
+});
+
+/** Terms & leaderboard consent, required on new signups. */
+export const agreeSchema = z.literal(true, {
+  error:
+    "Please agree to the Terms & Privacy Policy and the public leaderboard consent.",
 });
 
 /** Standalone password policy, reused by the reset-password flow. */
@@ -189,12 +208,13 @@ export type AccountSecurity = {
   email: string | null;
   phone: string | null;
   googleLinked: boolean;
+  publicLeaderboard: boolean;
 };
 
 /** Recovery channels + Google link status for the logged-in user. */
 export async function getAccountSecurity(userId: string): Promise<AccountSecurity | null> {
   const [row] = await db
-    .select({ email: users.email, phone: users.phone })
+    .select({ email: users.email, phone: users.phone, publicLeaderboard: users.publicLeaderboard })
     .from(users)
     .where(eq(users.id, userId));
   if (!row) return null;
@@ -202,7 +222,7 @@ export async function getAccountSecurity(userId: string): Promise<AccountSecurit
     .select({ id: oauthAccounts.id })
     .from(oauthAccounts)
     .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")));
-  return { email: row.email, phone: row.phone, googleLinked: Boolean(link) };
+  return { email: row.email, phone: row.phone, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard };
 }
 
 export type FieldErrors = Partial<Record<string, string>>;
@@ -418,6 +438,11 @@ export async function verifyCredentials(
   );
 
   if (!user?.passwordHash || !matches) {
+    await recordFailure(parsed.throttleKey);
+    return null;
+  }
+  if (user.suspended) {
+    // Suspended accounts can never log in; keep the reason generic.
     await recordFailure(parsed.throttleKey);
     return null;
   }

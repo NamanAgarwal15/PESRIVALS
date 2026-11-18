@@ -2,9 +2,8 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
-import { CountryCodeSelect } from "./country-code-select";
 import { type SignUpState, signUpAction } from "@/lib/auth-actions";
-import { Field, FormError } from "./form-parts";
+import { Field, FormError, PhoneField } from "./form-parts";
 
 const initialState: SignUpState = {};
 
@@ -51,27 +50,47 @@ export function SignupForm() {
         required
       />
       <Field
-        label="Email (for account recovery)"
+        label="Email (required)"
         name="email"
         type="email"
         autoComplete="email"
-        hint="Email or phone is required so you can recover your account."
+        hint="Used for account recovery and login codes."
         error={errors.email}
         defaultValue={values?.email ?? ""}
+        required
       />
-      <div className="flex gap-2">
-        <CountryCodeSelect />
-        <div className="flex-1">
-          <Field
-            label="Phone (for account recovery)"
-            name="phone"
-            type="tel"
-            autoComplete="tel-national"
-            hint="Indian numbers work without +91. Pick a code for others."
-            error={errors.phone}
-            defaultValue={values?.phone ?? ""}
+      <PhoneField
+        label="Phone (required)"
+        name="phone"
+        type="tel"
+        autoComplete="tel-national"
+        hint="Indian numbers work without +91. Pick a code for others."
+        error={errors.phone}
+        defaultValue={values?.phone ?? ""}
+        required
+      />
+      <div className="flex flex-col gap-1.5">
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="agree"
+            value="true"
+            className="mt-1 h-4 w-4 accent-(--primary)"
+            required
           />
-        </div>
+          <span>
+            I agree to the{" "}
+            <a href="/terms" className="text-primary underline-offset-4 hover:underline">
+              Terms
+            </a>{" "}
+            &amp;{" "}
+            <a href="/privacy" className="text-primary underline-offset-4 hover:underline">
+              Privacy Policy
+            </a>{" "}
+            and consent to my aggregated career stats appearing on the public leaderboard.
+          </span>
+        </label>
+        {errors.agree ? <p className="text-sm text-destructive">{errors.agree}</p> : null}
       </div>
       <Button
         type="submit"

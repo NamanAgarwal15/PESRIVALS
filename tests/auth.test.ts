@@ -28,13 +28,13 @@ const email = (label: string) => `${RUN}.${label}${counter++}@example.com`;
 const indianMobile = () => `98${randomInt(0, 100_000_000).toString().padStart(8, "0")}`;
 
 async function signUp(input: Partial<SignUpInput> & { username: string }) {
-  // Since the email-or-phone rule, signups without an explicit recovery
-  // channel get a default email so older tests keep exercising the happy path.
-  const hasChannel = input.email !== undefined || input.phone !== undefined;
+  // New signups require BOTH email and phone, so any channel a test does not
+  // set explicitly gets a unique default (pass "" to test it missing).
   const result = await signUpUser({
     displayName: "Test Player",
     password: PASSWORD,
-    ...(hasChannel ? {} : { email: email("auto") }),
+    email: input.email === undefined ? email("auto") : input.email,
+    phone: input.phone === undefined ? indianMobile() : input.phone,
     ...input,
   });
   if (result.ok) createdUserIds.add(result.user.id);
@@ -100,25 +100,19 @@ describe("sign-up", () => {
 
     const row = await userRow(user.id);
     expect(row.email).not.toBeNull();
-    expect(row.phone).toBeNull();
+    expect(row.phone).not.toBeNull();
     expect(row.isPlaceholder).toBe(false);
     expect(row.passwordHash).toMatch(/^\$2[aby]\$12\$/);
     expect(row.passwordHash).not.toContain(PASSWORD);
   });
 
-  it("requires an email or phone for account recovery", async () => {
-    const blank = await signUp({ username: uname("blank"), email: "   ", phone: "" });
-    expect(blank.ok).toBe(false);
-    if (blank.ok) return;
-    expect(blank.errors.form).toBe(
-      "Please enter either an email address or a phone number for account recovery.",
-    );
-
-    // Blank phone is still stored as null when an email is present.
-    const user = await mustSignUp({ username: uname("blank2"), email: email("b2"), phone: "" });
-    const row = await userRow(user.id);
-    expect(row.email).not.toBeNull();
-    expect(row.phone).toBeNull();
+  it("requires BOTH an email and a phone for new signups", async () => {
+    const noPhone = await signUp({ username: uname("blank"), email: email("np"), phone: "" });
+    expect(noPhone.ok).toBe(false);
+    if (!noPhone.ok) expect(noPhone.errors.phone).toBeTruthy();
+    const noEmail = await signUp({ username: uname("blank2"), email: "", phone: indianMobile() });
+    expect(noEmail.ok).toBe(false);
+    if (!noEmail.ok) expect(noEmail.errors.email).toBeTruthy();
   });
 
   it("lowercases the email", async () => {
