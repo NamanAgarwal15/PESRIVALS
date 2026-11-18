@@ -14,7 +14,6 @@ import {
   GENERIC_LOGIN_ERROR,
   claimUsername,
   isGoogleEnabled,
-  normalizePhone,
   passwordSchema,
   signUpUser,
 } from "@/lib/auth-helpers";
@@ -289,57 +288,18 @@ export async function loginWithOtpAction(formData: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Account settings (/home)
+// Account privacy (/home profile panel). Email, phone and password changes
+// go through OTP in profile-actions.ts and can NOT be changed here.
 // ---------------------------------------------------------------------------
 
-export type AccountSettingsState = {
-  message?: string;
-  errors?: FieldErrors;
-  values?: { email: string; phone: string; publicLeaderboard: boolean };
-};
-
-/** Lets a logged-in user add/update their recovery email, phone and leaderboard visibility. */
-export async function updateAccountSettingsAction(
-  _prev: AccountSettingsState,
-  formData: FormData,
-): Promise<AccountSettingsState> {
+/** Toggles whether other (non-admin) players may inspect this profile's rivalry details. */
+export async function setProfileVisibilityAction(visible: boolean): Promise<{ ok: boolean }> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
-
-  const email = text(formData, "email").trim().toLowerCase();
-  const rawPhone = text(formData, "phone").trim();
-  const phone = rawPhone
-    ? applyCountryCode(rawPhone, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
-    : "";
-  const publicLeaderboard = formData.get("publicLeaderboard") === "true";
-  const values = { email, phone: rawPhone, publicLeaderboard };
-
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return { errors: { email: "Enter a valid email address." }, values };
-  }
-  const e164 = rawPhone ? normalizePhone(phone) : null;
-  if (rawPhone && !e164) {
-    return { errors: { phone: "Enter a valid phone number." }, values };
-  }
-
-  try {
-    await db
-      .update(users)
-      .set({
-        email,
-        ...(e164 ? { phone: e164 } : {}), // blank keeps the existing number
-        publicLeaderboard,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, session.user.id));
-  } catch {
-    // Unique violation: the email/phone is already used by another account.
-    return {
-      errors: { form: "That email or phone is already used by another account." },
-      values,
-    };
-  }
-
+  await db
+    .update(users)
+    .set({ publicLeaderboard: visible, updatedAt: new Date() })
+    .where(eq(users.id, session.user.id));
   await unstable_update({});
-  return { message: "Account settings saved.", values };
+  return { ok: true };
 }

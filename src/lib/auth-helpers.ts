@@ -209,12 +209,13 @@ export type AccountSecurity = {
   phone: string | null;
   googleLinked: boolean;
   publicLeaderboard: boolean;
+  hasPassword: boolean;
 };
 
 /** Recovery channels + Google link status for the logged-in user. */
 export async function getAccountSecurity(userId: string): Promise<AccountSecurity | null> {
   const [row] = await db
-    .select({ email: users.email, phone: users.phone, publicLeaderboard: users.publicLeaderboard })
+    .select({ email: users.email, phone: users.phone, publicLeaderboard: users.publicLeaderboard, passwordHash: users.passwordHash })
     .from(users)
     .where(eq(users.id, userId));
   if (!row) return null;
@@ -222,7 +223,7 @@ export async function getAccountSecurity(userId: string): Promise<AccountSecurit
     .select({ id: oauthAccounts.id })
     .from(oauthAccounts)
     .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")));
-  return { email: row.email, phone: row.phone, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard };
+  return { email: row.email, phone: row.phone, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard, hasPassword: Boolean(row.passwordHash) };
 }
 
 export type FieldErrors = Partial<Record<string, string>>;

@@ -41,7 +41,7 @@ export async function listUsers(search = "") {
       role: users.role,
       suspended: users.suspended,
       publicLeaderboard: users.publicLeaderboard,
-      matchCount: sql<number>`(select count(*)::int from matches m join rivalries r on r.id = m.rivalry_id where r.user_a_id = ${users.id} or r.user_b_id = ${users.id})`,
+      matchCount: sql<number>`(select count(*)::int from matches m join rivalries r on r.id = m.rivalry_id where r.user_a_id = "users"."id" or r.user_b_id = "users"."id")`,
     })
     .from(users)
     .where(

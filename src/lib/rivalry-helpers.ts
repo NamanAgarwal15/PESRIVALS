@@ -440,3 +440,23 @@ export async function isActiveRivalryMember(
     );
   return Boolean(row);
 }
+
+/**
+ * How the current user relates to every other user they share a rivalry row
+ * with, keyed by the other user's id. Used by the leaderboard's request buttons.
+ */
+export async function getRelationMap(
+  currentUserId: string,
+): Promise<Record<string, { relation: RivalryRelation; rivalryId: string }>> {
+  if (!isUuid(currentUserId)) return {};
+  const rows = await db
+    .select()
+    .from(rivalries)
+    .where(or(eq(rivalries.userAId, currentUserId), eq(rivalries.userBId, currentUserId)));
+  const out: Record<string, { relation: RivalryRelation; rivalryId: string }> = {};
+  for (const row of rows) {
+    const other = row.userAId === currentUserId ? row.userBId : row.userAId;
+    out[other] = { relation: relationFor(row, currentUserId), rivalryId: row.id };
+  }
+  return out;
+}

@@ -32,9 +32,14 @@ async function ResetPasswordContent({
           : "This reset link is missing or malformed. Request a new one."
       }
       footer={
-        <Link href="/forgot-password" className="text-primary underline-offset-4 hover:underline">
-          Request a new link
-        </Link>
+        <span className="flex flex-col gap-1">
+          <Link href="/forgot-password" className="text-primary underline-offset-4 hover:underline">
+            Request a new link
+          </Link>
+          <Link href="/login" className="text-primary underline-offset-4 hover:underline">
+            ← Back to login
+          </Link>
+        </span>
       }
     >
       {validToken ? (

@@ -10,6 +10,7 @@ import { agreeSchema, signUpSchema, signUpUser } from "@/lib/auth-helpers";
 import { OTP_MAX_ATTEMPTS, sendOtp, sha256Hex, verifyOtp } from "@/lib/otp";
 import { getLeaderboard } from "@/lib/leaderboard";
 import { clearRateLimit } from "@/lib/rate-limit";
+import { applyProfileChange, pickVerificationTarget, startProfileVerification, verifyProfileChange } from "@/lib/profile";
 import { isAdminUser, setRole, setSuspended, setLeaderboardVisibility } from "@/lib/admin";
 
 const RUN = randomBytes(4).toString("hex");
@@ -102,21 +103,48 @@ describe("OTP lifecycle", () => {
   });
 });
 
-describe("leaderboard privacy", () => {
-  it("excludes opted-out and suspended users and exposes only aggregate fields", async () => {
-    const hidden = await makeUser("lbhide");
+describe("leaderboard visibility & privacy", () => {
+  it("lists private-profile users, hides suspended ones, exposes only aggregate fields", async () => {
+    const priv = await makeUser("lbpriv");
     const susp = await makeUser("lbsusp");
-    await setLeaderboardVisibility(hidden.id, false);
+    await setLeaderboardVisibility(priv.id, false); // peer-profile privacy only
     await setSuspended(susp.id, true);
     const rows = await getLeaderboard();
-    const names = rows.map((r) => r.username);
-    expect(names).not.toContain(hidden.username);
-    expect(names).not.toContain(susp.username);
+    expect(rows.map((r) => r.username)).not.toContain(susp.username);
+    // played=0 users are not ranked; privacy flag must not be the filter.
     for (const r of rows) {
-      const keys = Object.keys(r).sort();
-      expect(keys).toEqual(["avgPossession", "displayName", "passAccuracy", "rank", "summary", "username"]);
-      expect(JSON.stringify(r)).not.toMatch(/@.+\./);
+      expect(Object.keys(r).sort()).toEqual(["avgPossession", "displayName", "passAccuracy", "rank", "summary", "userId", "username"]);
+      expect(JSON.stringify(r)).not.toMatch(/@.+./);
     }
+  });
+});
+
+describe("profile changes need OTP on the right channel", () => {
+  it("picks the OTHER channel when both are set, else the one available", () => {
+    const both = { email: "a@b.co", phone: "+919800000000" };
+    expect(pickVerificationTarget(both, "email")?.channel).toBe("phone");
+    expect(pickVerificationTarget(both, "phone")?.channel).toBe("email");
+    expect(pickVerificationTarget({ email: null, phone: "+919800000000" }, "phone")?.channel).toBe("phone");
+    expect(pickVerificationTarget({ email: null, phone: "+919800000000" }, "email")?.channel).toBe("phone");
+    expect(pickVerificationTarget({ email: "a@b.co", phone: null }, "email")?.channel).toBe("email");
+    expect(pickVerificationTarget({ email: null, phone: null }, "email")).toBeNull();
+  });
+
+  it("changing email requires the phone code; a wrong code changes nothing", async () => {
+    const u = await makeUser("prof1");
+    let sentTo = "";
+    let code = "";
+    const sender = async (c: string, _ch: "email" | "phone", id: string) => ((code = c), (sentTo = id), "sms" as const);
+    const start = await startProfileVerification(u.id, "email", sender);
+    expect(start.ok && start.needsCode).toBe(true);
+    expect(sentTo).toBe(u.phone);
+    const bad = await verifyProfileChange(u.id, "email", code === "000000" ? "111111" : "000000");
+    expect(bad.ok).toBe(false);
+    expect((await verifyProfileChange(u.id, "email", code)).ok).toBe(true);
+    const newEmail = `${RUN}.new@example.com`;
+    expect((await applyProfileChange(u.id, "email", newEmail)).ok).toBe(true);
+    const [row] = await db.select({ email: users.email }).from(users).where(eq(users.id, u.id));
+    expect(row.email).toBe(newEmail);
   });
 });
 
@@ -141,5 +169,15 @@ describe("admin RBAC", () => {
     } else {
       expect(admins.length).not.toBe(1);
     }
+  });
+});
+
+describe("admin page queries", () => {
+  it("run without SQL errors (regression: ambiguous id)", async () => {
+    const { getPlatformStats, listUsers, listRecentMatches } = await import("@/lib/admin");
+    await getPlatformStats();
+    expect((await listUsers("")).length).toBeGreaterThan(0);
+    await listUsers("@a%_");
+    await listRecentMatches();
   });
 });

@@ -8,10 +8,9 @@ import {
   IncomingRequestsSection,
   SentRequestsSection,
 } from "@/components/rivalries/rivalry-sections";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { logoutAction, linkGoogleAction } from "@/lib/auth-actions";
-import { SettingsCard } from "@/components/account/settings-card";
+import { logoutAction } from "@/lib/auth-actions";
+import { ProfilePanel } from "@/components/account/profile-panel";
 import { getAnnouncement } from "@/lib/admin";
 import { getAccountSecurity, isGoogleEnabled } from "@/lib/auth-helpers";
 import { getUserRivalries } from "@/lib/rivalry-helpers";
@@ -53,9 +52,20 @@ async function HomeContent() {
         </p>
       ) : null}
       <header className="flex items-center justify-between gap-4">
-        <h1 className="min-w-0 truncate text-4xl font-bold tracking-wide">
-          Hi @{session.user.username}
-        </h1>
+        {security ? (
+          <ProfilePanel
+            username={session.user.username}
+            displayName={session.user.displayName}
+            email={security.email}
+            phone={security.phone}
+            hasPassword={security.hasPassword}
+            googleLinked={security.googleLinked}
+            googleEnabled={isGoogleEnabled()}
+            peerVisible={security.publicLeaderboard}
+          />
+        ) : (
+          <h1 className="text-4xl font-bold tracking-wide">Hi @{session.user.username}</h1>
+        )}
         <nav className="flex items-center gap-3 text-sm">
           <Link href="/leaderboard" className="text-muted-foreground hover:text-foreground">Leaderboard</Link>
           {session.user.role === "admin" ? (
@@ -69,52 +79,6 @@ async function HomeContent() {
         </form>
       </header>
 
-      {security ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Account Security &amp; Google Link</CardTitle>
-            <CardDescription>
-              Recovery channels for your account. Link Google so you can always get back in.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-col gap-1 text-sm">
-              <span>
-                <span className="text-muted-foreground">Email: </span>
-                <span className="font-medium">{security.email ?? "not set"}</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Phone: </span>
-                <span className="font-medium">{security.phone ?? "not set"}</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Google: </span>
-                <span className={security.googleLinked ? "font-medium text-win" : "font-medium"}>
-                  {security.googleLinked ? "linked" : "not linked"}
-                </span>
-              </span>
-            </div>
-            {security.googleLinked ? null : isGoogleEnabled() ? (
-              <form action={linkGoogleAction}>
-                <Button type="submit" size="lg" className="h-10 px-4">
-                  Link Google Account
-                </Button>
-              </form>
-            ) : (
-              <p className="max-w-xs text-xs text-muted-foreground">
-                Google sign-in is not configured on this deployment, so linking is unavailable.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-      {security ? (
-        <SettingsCard
-          email={security.email}
-          phone={security.phone}
-          publicLeaderboard={security.publicLeaderboard}
-        />
-      ) : null}
       <Link
         href="/leaderboard"
         className="flex items-center justify-between gap-3 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10 transition-colors hover:bg-secondary"

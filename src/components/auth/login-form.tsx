@@ -111,7 +111,7 @@ export function LoginForm() {
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="@naman"
+            placeholder="enter_username"
             defaultValue={state.identifier ?? ""}
             required
           />

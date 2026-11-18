@@ -1,6 +1,7 @@
-// Public global leaderboard: AGGREGATED career stats only, for users who
-// opted in (public_leaderboard = true) and are not suspended. Never exposes
-// individual rivalry scores, head-to-head matchups, emails or phone numbers.
+// Global leaderboard: AGGREGATED career stats for every active (non-suspended)
+// player. The public_leaderboard flag does NOT hide anyone from this board; it
+// only governs peer profile visibility. Never exposes individual rivalry scores,
+// head-to-head matchups, emails or phone numbers.
 // Framework-free so it is unit-testable.
 
 import { and, eq } from "drizzle-orm";
@@ -11,6 +12,7 @@ import { toAnalyticsMatch } from "@/lib/career-stats";
 
 export type LeaderboardRow = {
   rank: number;
+  userId: string;
   username: string;
   displayName: string;
   summary: Summary;
@@ -26,7 +28,7 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
   const eligible = await db
     .select({ id: users.id, username: users.username, displayName: users.displayName })
     .from(users)
-    .where(and(eq(users.publicLeaderboard, true), eq(users.suspended, false)));
+    .where(eq(users.suspended, false));
 
   // matches have no direct user columns: orientation comes from the rivalry.
   const joined = await db
@@ -46,6 +48,7 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
       (m) => m.my.passes !== null && m.my.passes > 0 && m.my.successful_passes !== null,
     );
     return {
+      userId: u.id,
       username: u.username,
       displayName: u.displayName,
       summary,

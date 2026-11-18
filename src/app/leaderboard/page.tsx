@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { AuthAwareBack } from "@/components/nav/back-link";
+import { LeaderboardAction } from "@/components/rivalries/leaderboard-action";
+import { IncomingRequestsSection, SentRequestsSection } from "@/components/rivalries/rivalry-sections";
+import { getRelationMap, getUserRivalries } from "@/lib/rivalry-helpers";
+import { getSession } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLeaderboard } from "@/lib/leaderboard";
 
@@ -10,11 +15,11 @@ export const metadata: Metadata = { title: "Leaderboard | PESRIVALS" };
 export default function LeaderboardPage() {
   return (
     <main className="flex flex-1 flex-col gap-6">
+      <AuthAwareBack />
       <header className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-wide uppercase">Global Leaderboard</h1>
         <p className="text-sm text-muted-foreground">
-          Aggregated career stats across every rivalry — never individual head-to-head scores.
-          Players can opt out any time from their account settings.
+          Aggregated career stats across every rivalry — never individual head-to-head scores. Challenge any player to start a rivalry.
         </p>
       </header>
       <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
@@ -28,7 +33,10 @@ const FORM_COLOR: Record<string, string> = { W: "text-win", D: "text-draw", L: "
 
 async function LeaderboardContent() {
   await connection();
-  const rows = await getLeaderboard();
+  const [rows, session] = await Promise.all([getLeaderboard(), getSession()]);
+  const me = session?.user?.id;
+  const relations = me ? await getRelationMap(me) : {};
+  const requests = me ? await getUserRivalries(me) : null;
 
   if (!rows.length) {
     return (
@@ -41,9 +49,16 @@ async function LeaderboardContent() {
   }
 
   return (
+    <>
+    {requests ? (
+      <>
+        <IncomingRequestsSection requests={requests.incomingRequests} />
+        <SentRequestsSection requests={requests.sentRequests} />
+      </>
+    ) : null}
     <Card>
       <CardContent className="flex flex-col gap-2">
-        <div className="hidden grid-cols-[3rem_1fr_3rem_6rem_3.5rem_4rem_3rem_4rem_4rem_4rem_5rem] gap-2 border-b pb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase lg:grid">
+        <div className="hidden grid-cols-[3rem_1fr_3rem_6rem_3.5rem_4rem_3rem_4rem_4rem_4rem_5rem_8rem] gap-2 border-b pb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase lg:grid">
           <span>#</span>
           <span>Player</span>
           <span className="text-right">M</span>
@@ -55,11 +70,12 @@ async function LeaderboardContent() {
           <span className="text-right">Pass %</span>
           <span className="text-right">CS</span>
           <span className="text-center">Form</span>
+          <span className="text-right">Rivalry</span>
         </div>
         {rows.map((r) => (
           <div
             key={r.username}
-            className="grid grid-cols-2 items-center gap-2 border-b border-border/50 py-2 text-sm tabular-nums last:border-0 lg:grid-cols-[3rem_1fr_3rem_6rem_3.5rem_4rem_3rem_4rem_4rem_4rem_5rem]"
+            className="grid grid-cols-2 items-center gap-2 border-b border-border/50 py-2 text-sm tabular-nums last:border-0 lg:grid-cols-[3rem_1fr_3rem_6rem_3.5rem_4rem_3rem_4rem_4rem_4rem_5rem_8rem]"
           >
             <span className="font-heading text-lg font-bold text-muted-foreground">
               {r.rank}
@@ -104,6 +120,19 @@ async function LeaderboardContent() {
                   return acc;
                 }, [])}
             </span>
+            <span className="col-span-2 flex justify-end lg:col-span-1">
+              {me && me !== r.userId ? (
+                <LeaderboardAction
+                  targetUserId={r.userId}
+                  relation={relations[r.userId]?.relation ?? "none"}
+                  rivalryId={relations[r.userId]?.rivalryId}
+                />
+              ) : me === r.userId ? (
+                <span className="text-xs text-muted-foreground">You</span>
+              ) : (
+                <Link href="/login" className="text-xs text-primary underline-offset-4 hover:underline">Log in to challenge</Link>
+              )}
+            </span>
           </div>
         ))}
         <p className="pt-2 text-center text-xs text-muted-foreground">
@@ -115,5 +144,6 @@ async function LeaderboardContent() {
         </p>
       </CardContent>
     </Card>
+    </>
   );
 }

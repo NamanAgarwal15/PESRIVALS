@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { BackLink } from "@/components/nav/back-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,7 @@ export const metadata: Metadata = { title: "Admin | PESRIVALS", robots: { index:
 export default function AdminPage({ searchParams }: PageProps<"/admin">) {
   return (
     <main className="flex flex-1 flex-col gap-6">
+      <BackLink href="/home">← Back to Home</BackLink>
       <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
         <AdminContent searchParams={searchParams} />
       </Suspense>
@@ -103,7 +105,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                 </span>
                 <span className="text-muted-foreground">{u.matchCount} matches</span>
                 <span className="text-muted-foreground">
-                  board: {u.publicLeaderboard ? "visible" : "hidden"}
+                  peer profile: {u.publicLeaderboard ? "visible" : "private"}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +125,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                   <input type="hidden" name="userId" value={u.id} />
                   <input type="hidden" name="visible" value={String(!u.publicLeaderboard)} />
                   <Button type="submit" size="sm" variant="outline">
-                    {u.publicLeaderboard ? "Hide from leaderboard" : "Show on leaderboard"}
+                    {u.publicLeaderboard ? "Make profile private" : "Make profile visible"}
                   </Button>
                 </form>
                 <form action={adminSetRoleAction}>
