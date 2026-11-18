@@ -9,10 +9,11 @@ import { getRelationMap, getUserRivalries } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLeaderboard } from "@/lib/leaderboard";
+import { searchPlayers } from "@/lib/player-profile";
 
 export const metadata: Metadata = { title: "Leaderboard | PESRIVALS" };
 
-export default function LeaderboardPage() {
+export default function LeaderboardPage({ searchParams }: PageProps<"/leaderboard">) {
   return (
     <main className="flex flex-1 flex-col gap-6">
       <AuthAwareBack />
@@ -23,7 +24,7 @@ export default function LeaderboardPage() {
         </p>
       </header>
       <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
-        <LeaderboardContent />
+        <LeaderboardContent searchParams={searchParams} />
       </Suspense>
     </main>
   );
@@ -31,8 +32,13 @@ export default function LeaderboardPage() {
 
 const FORM_COLOR: Record<string, string> = { W: "text-win", D: "text-draw", L: "text-loss" };
 
-async function LeaderboardContent() {
+async function LeaderboardContent({
+  searchParams,
+}: Pick<PageProps<"/leaderboard">, "searchParams">) {
   await connection();
+  const sp = await searchParams;
+  const q = typeof sp.q === "string" ? sp.q : "";
+  const found = q.trim().length >= 2 ? await searchPlayers(q) : [];
   const [rows, session] = await Promise.all([getLeaderboard(), getSession()]);
   const me = session?.user?.id;
   const relations = me ? await getRelationMap(me) : {};
@@ -50,6 +56,34 @@ async function LeaderboardContent() {
 
   return (
     <>
+    <Card>
+      <CardContent className="flex flex-col gap-3">
+        <form className="flex gap-2">
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Find any player by username or name"
+            className="h-10 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 text-sm"
+          />
+          <button type="submit" className="h-10 rounded-md bg-secondary px-4 text-sm font-medium text-secondary-foreground">
+            Search
+          </button>
+        </form>
+        {q.trim().length >= 2 ? (
+          found.length ? (
+            <div className="flex flex-col gap-1">
+              {found.map((p) => (
+                <Link key={p.username} href={me ? `/player/${p.username}` : "/login"} className="text-sm hover:underline">
+                  @{p.username} <span className="text-muted-foreground">{p.displayName}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No players found.</p>
+          )
+        ) : null}
+      </CardContent>
+    </Card>
     {requests ? (
       <>
         <IncomingRequestsSection requests={requests.incomingRequests} />
@@ -81,7 +115,13 @@ async function LeaderboardContent() {
               {r.rank}
             </span>
             <span className="min-w-0 truncate font-medium">
-              @{r.username}
+              {me ? (
+                <Link href={`/player/${r.username}`} className="hover:underline">
+                  @{r.username}
+                </Link>
+              ) : (
+                <>@{r.username}</>
+              )}
               <span className="ml-2 hidden text-muted-foreground md:inline">
                 {r.displayName}
               </span>

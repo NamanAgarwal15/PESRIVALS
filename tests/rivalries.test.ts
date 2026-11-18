@@ -211,8 +211,6 @@ describe("sendRivalryRequest", () => {
     if (!result.ok) return;
     const row = await rivalryRow(result.rivalryId);
     expect(row).toMatchObject({ status: "pending", requestedBy: a.id, acceptedAt: null });
-    expect(row.aPublic).toBe(false);
-    expect(row.bPublic).toBe(false);
   });
 
   it("rejects challenging yourself", async () => {

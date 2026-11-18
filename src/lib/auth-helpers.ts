@@ -178,12 +178,13 @@ export type AccountSecurity = {
   googleLinked: boolean;
   publicLeaderboard: boolean;
   hasPassword: boolean;
+  efootballId: string | null;
 };
 
 /** Recovery channels + Google link status for the logged-in user. */
 export async function getAccountSecurity(userId: string): Promise<AccountSecurity | null> {
   const [row] = await db
-    .select({ email: users.email, publicLeaderboard: users.publicLeaderboard, passwordHash: users.passwordHash })
+    .select({ email: users.email, publicLeaderboard: users.publicLeaderboard, passwordHash: users.passwordHash, efootballId: users.efootballId })
     .from(users)
     .where(eq(users.id, userId));
   if (!row) return null;
@@ -191,7 +192,7 @@ export async function getAccountSecurity(userId: string): Promise<AccountSecurit
     .select({ id: oauthAccounts.id })
     .from(oauthAccounts)
     .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")));
-  return { email: row.email, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard, hasPassword: Boolean(row.passwordHash) };
+  return { email: row.email, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard, hasPassword: Boolean(row.passwordHash), efootballId: row.efootballId };
 }
 
 export type FieldErrors = Partial<Record<string, string>>;
@@ -544,6 +545,35 @@ export async function claimUsername(
     }
     throw err;
   }
+}
+
+/**
+ * Is the account behind this Google identity suspended? Checks the linked
+ * Google account first, then a verified email match. Unknown identities are
+ * not suspended (they would be created fresh).
+ */
+export async function isGoogleIdentitySuspended(profile: GoogleProfile): Promise<boolean> {
+  if (!profile.sub) return false;
+  const linked = await findUserByOauth(profile.sub);
+  if (linked) return linked.suspended;
+  if (profile.emailVerified === true && profile.email) {
+    const [row] = await db
+      .select({ suspended: users.suspended })
+      .from(users)
+      .where(eq(users.email, profile.email.trim().toLowerCase()));
+    return row?.suspended ?? false;
+  }
+  return false;
+}
+
+/**
+ * Fresh account state for an existing session token. Returns null when the
+ * user no longer exists or is suspended, which ends the session on the very
+ * next request (an admin suspension takes effect immediately).
+ */
+export async function refreshSessionUser(userId: string): Promise<AuthUser | null> {
+  const user = await getAuthUserById(userId);
+  return user && !user.suspended ? user : null;
 }
 
 export async function getAuthUserById(id: string): Promise<AuthUser | null> {

@@ -58,6 +58,7 @@ async function HomeContent() {
             displayName={session.user.displayName}
             email={security.email}
             hasPassword={security.hasPassword}
+            efootballId={security.efootballId}
             googleLinked={security.googleLinked}
             googleEnabled={isGoogleEnabled()}
             peerVisible={security.publicLeaderboard}

@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CopyButton } from "@/components/profile/copy-button";
 import { linkGoogleAction, setProfileVisibilityAction } from "@/lib/auth-actions";
 import {
   type ProfileState,
   commitProfileChangeAction,
+  updateEfootballIdAction,
   requestProfileOtpAction,
 } from "@/lib/profile-actions";
 
@@ -103,11 +105,49 @@ function ChangeSection({ kind, title, hasPassword }: { kind: Kind; title: string
   );
 }
 
+function EfootballIdSection({ initial }: { initial: string | null }) {
+  const [value, setValue] = useState(initial ?? "");
+  const [saved, setSaved] = useState(initial);
+  const [msg, setMsg] = useState<ProfileState | null>(null);
+  const [pending, start] = useTransition();
+
+  function save(e: React.FormEvent) {
+    e.preventDefault();
+    start(async () => {
+      const r = await updateEfootballIdAction(value);
+      setMsg(r);
+      if (r.ok) setSaved(r.value ?? null);
+    });
+  }
+
+  return (
+    <form onSubmit={save} className="flex flex-col gap-2 border-t border-border/50 pt-3">
+      <Label htmlFor="efootballId">eFootball ID (optional)</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id="efootballId"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          maxLength={24}
+          placeholder="Your in-game ID"
+          className="h-10 w-56"
+        />
+        <Button type="submit" disabled={pending} className="h-10">Save</Button>
+        {saved ? <CopyButton value={saved} label="Copy ID" /> : null}
+      </div>
+      <p className="text-xs text-muted-foreground">Shown on your profile so rivals can add you in the game.</p>
+      {msg?.error ? <p role="alert" className="text-sm text-destructive">{msg.error}</p> : null}
+      {msg?.message ? <p className="text-sm text-win">{msg.message}</p> : null}
+    </form>
+  );
+}
+
 export function ProfilePanel({
   username,
   displayName,
   email,
   hasPassword,
+  efootballId,
   googleLinked,
   googleEnabled,
   peerVisible,
@@ -116,6 +156,7 @@ export function ProfilePanel({
   displayName: string;
   email: string | null;
   hasPassword: boolean;
+  efootballId: string | null;
   googleLinked: boolean;
   googleEnabled: boolean;
   peerVisible: boolean;
@@ -159,6 +200,7 @@ export function ProfilePanel({
                 ? "Changes are confirmed with a code sent to your email."
                 : "Add an email so you can recover your account and receive login codes."}
             </p>
+            <EfootballIdSection initial={efootballId} />
             <ChangeSection kind="password" title="Change password" hasPassword={hasPassword} />
             <ChangeSection kind="email" title={email ? "Change email" : "Add email"} />
             <label className="flex items-start gap-2 border-t border-border/50 pt-3 text-sm">
@@ -172,7 +214,7 @@ export function ProfilePanel({
                 className="mt-1 h-4 w-4 accent-(--primary)"
               />
               <span>
-                Let other players inspect my profile and rivalry details. Admins can always see them for moderation.
+                Let other players see my rivalries and match logs. My career stats stay public either way; my rivals and admins always see everything.
               </span>
             </label>
           </CardContent>

@@ -6,6 +6,8 @@ import {
   type AuthUser,
   getAuthUserById,
   isGoogleEnabled,
+  isGoogleIdentitySuspended,
+  refreshSessionUser,
   resolveGoogleUser,
   verifyCredentials,
 } from "@/lib/auth-helpers";
@@ -85,7 +87,16 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
     ...(isGoogleEnabled() ? [Google] : []),
   ],
   callbacks: {
-    async jwt({ token, user, account, profile, trigger }) {
+    // Suspended accounts can never start a Google sign-in.
+    async signIn({ account, profile }) {
+      if (account?.provider !== "google") return true;
+      return !(await isGoogleIdentitySuspended({
+        sub: account.providerAccountId,
+        email: profile?.email,
+        emailVerified: profile?.email_verified === true,
+      }));
+    },
+    async jwt({ token, user, account, profile }) {
       if (account?.provider === "google") {
         // Map the Google identity to our own user row (link or create).
         const dbUser = await resolveGoogleUser({
@@ -95,6 +106,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
           name: profile?.name,
           picture: typeof profile?.picture === "string" ? profile.picture : null,
         });
+        if (dbUser.suspended) return null;
         return applyUser(token, dbUser);
       }
 
@@ -104,6 +116,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       ) {
         // Role/suspension come from the database, never from the sign-in payload.
         const fresh = await getAuthUserById(user.id);
+        if (fresh?.suspended) return null;
         if (fresh) return applyUser(token, fresh);
         return applyUser(token, {
           id: user.id,
@@ -117,10 +130,12 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
         });
       }
 
-      // unstable_update(): re-read from the database, never trust the caller.
-      if (trigger === "update" && token.id) {
-        const fresh = await getAuthUserById(token.id);
-        if (fresh) return applyUser(token, fresh);
+      // Every later request (and unstable_update): re-read the account from the
+      // database. A deleted or suspended user gets no session (null), so an
+      // admin suspension locks the user out on their next request.
+      if (token.id) {
+        const fresh = await refreshSessionUser(token.id);
+        return fresh ? applyUser(token, fresh) : null;
       }
 
       return token;

@@ -1,5 +1,6 @@
 // Idempotent LIVE account recovery setup for @naman (admin + recovery
-// channels + temporary password) and @ayush (phone only).
+// email + temporary password) and @ayush (email). Phone numbers no longer exist
+// (users.phone was dropped in migration 0004).
 //
 //   node scripts/setup-live-accounts.mjs --confirm-live
 //
@@ -39,19 +40,19 @@ const before = { users: await count("users"), matches: await count("matches") };
 
 const hash = await bcrypt.hash("Naman@2026", 12);
 const n = await sql.query(
-  `update users set email = $1, phone = $2, role = 'admin', password_hash = $3, updated_at = now()
+  `update users set email = $1, role = 'admin', password_hash = $2, updated_at = now()
    where username = 'naman' returning id`,
-  ["kingnamanbtn@gmail.com", "+917047159008", hash],
+  ["kingnamanbtn@gmail.com", hash],
 );
 const a = await sql.query(
-  `update users set phone = $1, updated_at = now() where username = 'ayush' returning id`,
-  ["+919932307578"],
+  `update users set email = $1, updated_at = now() where username = 'ayush' returning id`,
+  ["ayush.gupta9635@gmail.com"],
 );
 console.log(`naman updated: ${n.length}, ayush updated: ${a.length}`);
 
 const after = { users: await count("users"), matches: await count("matches") };
 const rows = await sql.query(
-  `select username, email, phone, role, suspended, public_leaderboard from users where username in ('naman','ayush') order by username`,
+  `select username, email, role, suspended, public_leaderboard from users where username in ('naman','ayush') order by username`,
 );
 console.table(rows);
 console.log("before:", before, "after:", after);

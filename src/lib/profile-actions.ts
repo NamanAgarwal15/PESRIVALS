@@ -10,6 +10,7 @@ import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
 import {
   type ChangeKind,
   applyProfileChange,
+  setEfootballId,
   startProfileVerification,
   verifyProfileChange,
 } from "@/lib/profile";
@@ -73,4 +74,12 @@ export async function commitProfileChangeAction(
   if (!done.ok) return { ok: false, error: done.error };
   await unstable_update({});
   return { ok: true, message: `${kind === "password" ? "Password" : "Email"} updated.` };
+}
+
+/** Saves (or clears, when blank) the optional eFootball ID. */
+export async function updateEfootballIdAction(raw: string): Promise<ProfileState & { value?: string | null }> {
+  const userId = await requireUserId();
+  const r = await setEfootballId(userId, raw);
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, message: r.value ? "eFootball ID saved." : "eFootball ID cleared.", value: r.value };
 }

@@ -12,6 +12,7 @@ import {
   timestamp,
   unique,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 export const rivalryStatus = pgEnum("rivalry_status", [
@@ -36,7 +37,8 @@ export const users = pgTable(
     username: text("username").notNull().unique(),
     displayName: text("display_name").notNull(),
     email: text("email").unique(),
-    phone: text("phone").unique(),
+    // Optional in-game ID, shown on the profile so rivals can add each other.
+    efootballId: varchar("efootball_id", { length: 32 }),
     passwordHash: text("password_hash"),
     imageUrl: text("image_url"),
     isPlaceholder: boolean("is_placeholder").notNull().default(false),
@@ -44,7 +46,8 @@ export const users = pgTable(
     onboarded: boolean("onboarded").notNull().default(true),
     // RBAC: only 'user' and 'admin'. Admins see /admin.
     role: text("role").notNull().default("user"),
-    // Aggregated career stats may appear on the public leaderboard.
+    // Peer rivalry privacy: when false, non-rivals cannot see this player's
+    // individual rivalries or match logs (career stats stay public).
     publicLeaderboard: boolean("public_leaderboard").notNull().default(true),
     // Suspended accounts cannot log in and are hidden from the leaderboard.
     suspended: boolean("suspended").notNull().default(false),
@@ -60,10 +63,6 @@ export const users = pgTable(
     check(
       "users_email_lowercase",
       sql`${t.email} IS NULL OR ${t.email} = lower(${t.email})`,
-    ),
-    check(
-      "users_phone_e164",
-      sql`${t.phone} IS NULL OR ${t.phone} ~ '^\\+[1-9][0-9]{7,14}$'`,
     ),
   ],
 );
@@ -175,8 +174,6 @@ export const rivalries = pgTable(
     requestedBy: uuid("requested_by")
       .notNull()
       .references(() => users.id),
-    aPublic: boolean("a_public").notNull().default(false),
-    bPublic: boolean("b_public").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

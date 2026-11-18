@@ -82,3 +82,32 @@ export async function applyProfileChange(
   }
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Optional eFootball ID (display + copy; lets rivals add each other in-game)
+// ---------------------------------------------------------------------------
+
+export const EFOOTBALL_ID_MAX = 24;
+
+/** Trimmed; letters, digits and hyphens; empty clears it. Returns null to clear. */
+export function parseEfootballId(raw: string): { ok: true; value: string | null } | { ok: false; error: string } {
+  const v = raw.trim();
+  if (v === "") return { ok: true, value: null };
+  if (v.length > EFOOTBALL_ID_MAX || !/^[A-Za-z0-9-]+$/.test(v)) {
+    return {
+      ok: false,
+      error: `Use up to ${EFOOTBALL_ID_MAX} letters, numbers or hyphens.`,
+    };
+  }
+  return { ok: true, value: v };
+}
+
+export async function setEfootballId(userId: string, raw: string): Promise<VerifyResult & { value?: string | null }> {
+  const parsed = parseEfootballId(raw);
+  if (!parsed.ok) return parsed;
+  await db
+    .update(users)
+    .set({ efootballId: parsed.value, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+  return { ok: true, value: parsed.value };
+}
