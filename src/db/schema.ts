@@ -137,8 +137,8 @@ export const otpCodes = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    channel: text("channel").notNull(), // 'email' | 'phone'
-    identifier: text("identifier").notNull(), // email address or E.164 phone
+    channel: text("channel").notNull(), // always 'email'
+    identifier: text("identifier").notNull(), // email address
     codeHash: text("code_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     attempts: integer("attempts").notNull().default(0),

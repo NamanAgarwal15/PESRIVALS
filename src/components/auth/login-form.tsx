@@ -3,9 +3,9 @@
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { loginWithOtpAction, loginAction, sendOtpAction } from "@/lib/auth-actions";
-import { Field, FormError, PhoneField } from "./form-parts";
+import { Field, FormError } from "./form-parts";
 
-type Mode = "username" | "email" | "phone";
+type Mode = "username" | "email";
 type Method = "password" | "otp";
 
 const initialState = { error: undefined, identifier: "" } as {
@@ -41,7 +41,6 @@ export function LoginForm() {
     setOtpMessage(null);
     const fd = new FormData();
     fd.set("identifier", identifier);
-    fd.set("countryCode", "+91");
     const result = await sendOtpAction(fd);
     setOtpMessage(result.message);
     setOtpSent(result.ok);
@@ -53,7 +52,6 @@ export function LoginForm() {
     setOtpBusy(true);
     const fd = new FormData();
     fd.set("identifier", identifier);
-    fd.set("countryCode", "+91");
     fd.set("code", otpCode);
     try {
       await loginWithOtpAction(fd);
@@ -67,17 +65,16 @@ export function LoginForm() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Login mode tabs: Username | Email | Phone */}
+      {/* Login mode tabs: Username | Email */}
       <div
         role="tablist"
         aria-label="Login method"
-        className="grid grid-cols-3 gap-1 rounded-full bg-secondary p-1"
+        className="grid grid-cols-2 gap-1 rounded-full bg-secondary p-1"
       >
         {(
           [
             ["username", "Username"],
             ["email", "Email"],
-            ["phone", "Phone"],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -127,8 +124,7 @@ export function LoginForm() {
       ) : method === "password" ? (
         <form action={formAction} className="flex flex-col gap-4">
           {state.error ? <FormError>{state.error}</FormError> : null}
-          {mode === "email" ? (
-            <Field
+                      <Field
               label="Email"
               name="identifier"
               type="email"
@@ -137,18 +133,6 @@ export function LoginForm() {
               onChange={(e) => setIdentifier(e.target.value)}
               required
             />
-          ) : (
-            <PhoneField
-              label="Phone"
-              name="identifier"
-              type="tel"
-              autoComplete="tel-national"
-              hint="Indian numbers work without +91."
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-            />
-          )}
           <Field
             label="Password"
             name="password"
@@ -176,8 +160,7 @@ export function LoginForm() {
               {otpMessage}
             </p>
           ) : null}
-          {mode === "email" ? (
-            <Field
+                      <Field
               label="Email"
               name="identifier"
               type="email"
@@ -187,19 +170,6 @@ export function LoginForm() {
               disabled={otpSent}
               required
             />
-          ) : (
-            <PhoneField
-              label="Phone"
-              name="identifier"
-              type="tel"
-              autoComplete="tel-national"
-              hint="The code goes to your phone. If SMS is not set up yet, it is sent to your registered recovery email."
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              disabled={otpSent}
-              required
-            />
-          )}
           {otpSent ? (
             <>
               <Field
@@ -230,7 +200,7 @@ export function LoginForm() {
                 }}
                 className="text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
               >
-                Use a different email/phone
+                Use a different email
               </button>
             </>
           ) : (

@@ -1,4 +1,4 @@
-// OTP lifecycle, mandatory email+phone signup, leaderboard privacy and admin
+// OTP lifecycle, mandatory email signup, email-only OTP, leaderboard privacy and admin
 // RBAC. Runs against the LOCAL TEST database and cleans up its own rows.
 
 import { randomBytes } from "node:crypto";
@@ -10,28 +10,25 @@ import { agreeSchema, signUpSchema, signUpUser } from "@/lib/auth-helpers";
 import { OTP_MAX_ATTEMPTS, sendOtp, sha256Hex, verifyOtp } from "@/lib/otp";
 import { getLeaderboard } from "@/lib/leaderboard";
 import { clearRateLimit } from "@/lib/rate-limit";
-import { applyProfileChange, pickVerificationTarget, startProfileVerification, verifyProfileChange } from "@/lib/profile";
+import { applyProfileChange, maskEmail, startProfileVerification, verifyProfileChange } from "@/lib/profile";
 import { isAdminUser, setRole, setSuspended, setLeaderboardVisibility } from "@/lib/admin";
 
 const RUN = randomBytes(4).toString("hex");
 const ids = new Set<string>();
 const rl = new Set<string>();
-let n = 0;
 
 async function makeUser(label: string) {
   const email = `${RUN}.${label}@example.com`;
-  const phone = `+9197${String(10_000_000 + n++).padStart(8, "0")}`;
   const r = await signUpUser({
     username: `${RUN}_${label}`.slice(0, 20),
     displayName: "OTP Test",
     password: "hunter2pass1",
     email,
-    phone,
   });
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   ids.add(r.user.id);
   rl.add(`otp:${r.user.id}`);
-  return { id: r.user.id, email, phone, username: r.user.username };
+  return { id: r.user.id, email, username: r.user.username };
 }
 
 afterAll(async () => {
@@ -39,13 +36,11 @@ afterAll(async () => {
   for (const k of rl) await clearRateLimit(k);
 });
 
-describe("mandatory email + phone signup", () => {
+describe("mandatory email signup", () => {
   const base = { username: "abcde", displayName: "A", password: "hunter2pass1" };
-  it("rejects a signup missing either channel", () => {
-    const noPhone = signUpSchema.safeParse({ ...base, email: "a@b.co" });
-    const noEmail = signUpSchema.safeParse({ ...base, phone: "9876543210" });
-    expect(noPhone.success).toBe(false);
-    expect(noEmail.success).toBe(false);
+  it("rejects a signup without an email and needs no phone", () => {
+    expect(signUpSchema.safeParse({ ...base }).success).toBe(false);
+    expect(signUpSchema.safeParse({ ...base, email: "a@b.co" }).success).toBe(true);
   });
   it("requires the terms/leaderboard consent", () => {
     expect(agreeSchema.safeParse(false).success).toBe(false);
@@ -95,8 +90,8 @@ describe("OTP lifecycle", () => {
   it("limits sends to 3 per 15 minutes and refuses suspended users", async () => {
     const u = await makeUser("otp4");
     const { sender } = capture();
-    for (let i = 0; i < 3; i++) expect((await sendOtp(u.phone, sender)).ok).toBe(true);
-    expect(await sendOtp(u.phone, sender)).toEqual({ ok: false, code: "rate_limited" });
+    for (let i = 0; i < 3; i++) expect((await sendOtp(u.email, sender)).ok).toBe(true);
+    expect(await sendOtp(u.email, sender)).toEqual({ ok: false, code: "rate_limited" });
     const s = await makeUser("otp5");
     await setSuspended(s.id, true);
     expect(await sendOtp(s.email, sender)).toEqual({ ok: false, code: "suspended" });
@@ -120,24 +115,18 @@ describe("leaderboard visibility & privacy", () => {
 });
 
 describe("profile changes need OTP on the right channel", () => {
-  it("picks the OTHER channel when both are set, else the one available", () => {
-    const both = { email: "a@b.co", phone: "+919800000000" };
-    expect(pickVerificationTarget(both, "email")?.channel).toBe("phone");
-    expect(pickVerificationTarget(both, "phone")?.channel).toBe("email");
-    expect(pickVerificationTarget({ email: null, phone: "+919800000000" }, "phone")?.channel).toBe("phone");
-    expect(pickVerificationTarget({ email: null, phone: "+919800000000" }, "email")?.channel).toBe("phone");
-    expect(pickVerificationTarget({ email: "a@b.co", phone: null }, "email")?.channel).toBe("email");
-    expect(pickVerificationTarget({ email: null, phone: null }, "email")).toBeNull();
+  it("masks the email in the confirmation hint", () => {
+    expect(maskEmail("ayush@example.com")).toBe("a***@example.com");
   });
 
-  it("changing email requires the phone code; a wrong code changes nothing", async () => {
+  it("changing email requires a code emailed to the current address; a wrong code changes nothing", async () => {
     const u = await makeUser("prof1");
     let sentTo = "";
     let code = "";
-    const sender = async (c: string, _ch: "email" | "phone", id: string) => ((code = c), (sentTo = id), "sms" as const);
+    const sender = async (c: string, to: string) => ((code = c), (sentTo = to), "email" as const);
     const start = await startProfileVerification(u.id, "email", sender);
     expect(start.ok && start.needsCode).toBe(true);
-    expect(sentTo).toBe(u.phone);
+    expect(sentTo).toBe(u.email);
     const bad = await verifyProfileChange(u.id, "email", code === "000000" ? "111111" : "000000");
     expect(bad.ok).toBe(false);
     expect((await verifyProfileChange(u.id, "email", code)).ok).toBe(true);

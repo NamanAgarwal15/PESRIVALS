@@ -25,16 +25,14 @@ const throttleKeys = new Set<string>();
 let counter = 0;
 const uname = (label: string) => `${RUN}_${label}${counter++}`.slice(0, 20);
 const email = (label: string) => `${RUN}.${label}${counter++}@example.com`;
-const indianMobile = () => `98${randomInt(0, 100_000_000).toString().padStart(8, "0")}`;
+const looksLikeNumber = () => `98${randomInt(0, 100_000_000).toString().padStart(8, "0")}`;
 
 async function signUp(input: Partial<SignUpInput> & { username: string }) {
-  // New signups require BOTH email and phone, so any channel a test does not
-  // set explicitly gets a unique default (pass "" to test it missing).
+  // New signups require an email; tests that do not set one get a unique default.
   const result = await signUpUser({
     displayName: "Test Player",
     password: PASSWORD,
     email: input.email === undefined ? email("auto") : input.email,
-    phone: input.phone === undefined ? indianMobile() : input.phone,
     ...input,
   });
   if (result.ok) createdUserIds.add(result.user.id);
@@ -100,17 +98,13 @@ describe("sign-up", () => {
 
     const row = await userRow(user.id);
     expect(row.email).not.toBeNull();
-    expect(row.phone).not.toBeNull();
     expect(row.isPlaceholder).toBe(false);
     expect(row.passwordHash).toMatch(/^\$2[aby]\$12\$/);
     expect(row.passwordHash).not.toContain(PASSWORD);
   });
 
-  it("requires BOTH an email and a phone for new signups", async () => {
-    const noPhone = await signUp({ username: uname("blank"), email: email("np"), phone: "" });
-    expect(noPhone.ok).toBe(false);
-    if (!noPhone.ok) expect(noPhone.errors.phone).toBeTruthy();
-    const noEmail = await signUp({ username: uname("blank2"), email: "", phone: indianMobile() });
+  it("requires an email for new signups", async () => {
+    const noEmail = await signUp({ username: uname("blank2"), email: "" });
     expect(noEmail.ok).toBe(false);
     if (!noEmail.ok) expect(noEmail.errors.email).toBeTruthy();
   });
@@ -124,23 +118,6 @@ describe("sign-up", () => {
     expect((await userRow(user.id)).email).toBe(address);
   });
 
-  it("normalizes an Indian phone number to E.164", async () => {
-    const mobile = indianMobile();
-    const user = await mustSignUp({
-      username: uname("phone"),
-      phone: `${mobile.slice(0, 5)} ${mobile.slice(5)}`,
-    });
-    expect((await userRow(user.id)).phone).toBe(`+91${mobile}`);
-  });
-
-  it("keeps the country of a number written with a + prefix", async () => {
-    const user = await mustSignUp({
-      username: uname("intl"),
-      phone: "+44 7400 123456",
-    });
-    expect((await userRow(user.id)).phone).toBe("+447400123456");
-  });
-
   it("rejects invalid fields without creating a user", async () => {
     const name = uname("bad");
     const result = await signUp({
@@ -148,7 +125,6 @@ describe("sign-up", () => {
       displayName: "x".repeat(41),
       password: "short",
       email: "not-an-email",
-      phone: "12345",
     });
 
     expect(result.ok).toBe(false);
@@ -157,7 +133,6 @@ describe("sign-up", () => {
       "displayName",
       "email",
       "password",
-      "phone",
     ]);
     expect(await db.select().from(users).where(eq(users.username, name))).toHaveLength(0);
   });
@@ -177,16 +152,15 @@ describe("sign-up", () => {
     }
   });
 
-  it("rejects all-digit usernames, which login would read as a phone number", async () => {
+  it("rejects all-digit usernames, so they stay distinct from numbers", async () => {
     const result = await signUp({ username: "1234567" });
     expect(result.ok).toBe(false);
   });
 
-  it("rejects a duplicate username, email or phone", async () => {
+  it("rejects a duplicate username or email", async () => {
     const name = uname("dup");
     const address = email("dup");
-    const mobile = indianMobile();
-    await mustSignUp({ username: name, email: address, phone: mobile });
+    await mustSignUp({ username: name, email: address });
 
     const sameUsername = await signUp({ username: name.toUpperCase() });
     expect(sameUsername.ok).toBe(false);
@@ -199,13 +173,10 @@ describe("sign-up", () => {
     expect(sameEmail.ok).toBe(false);
     if (!sameEmail.ok) expect(sameEmail.errors.email).toBeTruthy();
 
-    const samePhone = await signUp({ username: uname("dup"), phone: `+91 ${mobile}` });
-    expect(samePhone.ok).toBe(false);
-    if (!samePhone.ok) expect(samePhone.errors.phone).toBeTruthy();
   });
 
-  it("the database itself rejects an uppercase email or a non-E.164 phone", async () => {
-    const insert = (extra: { email?: string; phone?: string }) =>
+  it("the database itself rejects an uppercase email", async () => {
+    const insert = (extra: { email?: string }) =>
       db
         .insert(users)
         .values({ username: uname("chk"), displayName: "Check", ...extra })
@@ -213,25 +184,20 @@ describe("sign-up", () => {
         .then((rows) => rows.forEach((r) => createdUserIds.add(r.id)));
 
     await expect(insert({ email: `${RUN}.UPPER@example.com` })).rejects.toThrow();
-    await expect(insert({ phone: "9876543210" })).rejects.toThrow();
   });
 });
 
 describe("credentials login", () => {
-  it("logs in by username, email or phone", async () => {
+  it("logs in by username or email", async () => {
     const name = uname("login");
     const address = email("login");
-    const mobile = indianMobile();
-    const user = await mustSignUp({ username: name, email: address, phone: mobile });
+    const user = await mustSignUp({ username: name, email: address });
 
     const attempts = [
       name,
       `  ${name.toUpperCase()} `,
       address,
       address.toUpperCase(),
-      mobile,
-      `${mobile.slice(0, 5)}-${mobile.slice(5)}`,
-      `+91 ${mobile}`,
     ];
     for (const identifier of attempts) {
       const result = await login(identifier, PASSWORD);
@@ -251,7 +217,7 @@ describe("credentials login", () => {
     expect(await login(name, "not-the-password")).toBeNull();
     expect(await login(uname("ghost"), PASSWORD)).toBeNull();
     expect(await login(email("ghost"), PASSWORD)).toBeNull();
-    expect(await login(indianMobile(), PASSWORD)).toBeNull();
+    expect(await login(looksLikeNumber(), PASSWORD)).toBeNull();
     expect(await login(name, "")).toBeNull();
     expect(await login("", PASSWORD)).toBeNull();
   });

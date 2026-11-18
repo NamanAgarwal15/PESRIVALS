@@ -17,7 +17,6 @@ import {
   passwordSchema,
   signUpUser,
 } from "@/lib/auth-helpers";
-import { applyCountryCode, DEFAULT_COUNTRY_CODE } from "@/lib/country-codes";
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { createPasswordResetToken, resetPasswordWithToken } from "@/lib/password-reset";
 import { sendOtp } from "@/lib/otp";
@@ -39,7 +38,7 @@ function rateKey(name: string, salt: string): string {
 export type SignUpState = {
   errors?: FieldErrors;
   // Echoed back so the form keeps what was typed. Never includes the password.
-  values?: { username: string; displayName: string; email: string; phone: string };
+  values?: { username: string; displayName: string; email: string };
 };
 
 export async function signUpAction(
@@ -50,13 +49,8 @@ export async function signUpAction(
     username: text(formData, "username"),
     displayName: text(formData, "displayName"),
     email: text(formData, "email"),
-    phone: text(formData, "phone"),
   };
   const password = text(formData, "password");
-  // Smart E.164 handling: prepend the selected country code when needed.
-  const phone = values.phone
-    ? applyCountryCode(values.phone, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
-    : values.phone;
   const agreed = formData.get("agree") === "true";
   if (!agreed) {
     return {
@@ -81,7 +75,7 @@ export async function signUpAction(
     };
   }
 
-  const result = await signUpUser({ ...values, phone, password });
+  const result = await signUpUser({ ...values, password });
   if (!result.ok) return { errors: result.errors, values };
 
   try {
@@ -105,11 +99,7 @@ export async function loginAction(
   _prev: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
-  const raw = text(formData, "identifier");
-  // If the identifier looks like a plain phone number, apply the country code.
-  const identifier = /^\+?[0-9][0-9\s()-]{6,}$/.test(raw.trim())
-    ? applyCountryCode(raw.trim(), text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
-    : raw;
+  const identifier = text(formData, "identifier");
   try {
     await signIn("credentials", {
       identifier,
@@ -167,9 +157,7 @@ export async function forgotPasswordAction(
   formData: FormData,
 ): Promise<ForgotPasswordState> {
   const raw = text(formData, "identifier");
-  const identifier = /^\+?[0-9][0-9\s()-]{6,}$/.test(raw.trim())
-    ? applyCountryCode(raw.trim(), text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
-    : raw.trim();
+  const identifier = raw.trim();
   const values = { identifier: raw };
 
   // Rate limit: max 3 requests per 15 minutes per identifier bucket.
@@ -245,13 +233,10 @@ export async function linkGoogleAction(): Promise<void> {
 
 export type OtpSendState = { ok: boolean; message: string };
 
-/** Sends a 6-digit OTP to an email or phone identifier. Non-enumerating. */
+/** Sends a 6-digit OTP to an email address. Non-enumerating. */
 export async function sendOtpAction(formData: FormData): Promise<OtpSendState> {
-  const raw = text(formData, "identifier").trim();
-  const identifier = /^\+?[0-9][0-9\s()-]{6,}$/.test(raw)
-    ? applyCountryCode(raw, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
-    : raw;
-  if (!identifier) return { ok: false, message: "Enter your email or phone number." };
+  const identifier = text(formData, "identifier").trim();
+  if (!identifier) return { ok: false, message: "Enter your email address." };
   try {
     const result = await sendOtp(identifier);
     if (!result.ok) {
@@ -276,10 +261,7 @@ export async function sendOtpAction(formData: FormData): Promise<OtpSendState> {
 }
 
 export async function loginWithOtpAction(formData: FormData): Promise<void> {
-  const raw = text(formData, "identifier").trim();
-  const identifier = /^\+?[0-9][0-9\s()-]{6,}$/.test(raw)
-    ? applyCountryCode(raw, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE)
-    : raw;
+  const identifier = text(formData, "identifier").trim();
   await signIn("otp", {
     identifier,
     code: text(formData, "code").trim(),
@@ -288,7 +270,7 @@ export async function loginWithOtpAction(formData: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Account privacy (/home profile panel). Email, phone and password changes
+// Account privacy (/home profile panel). Email and password changes
 // go through OTP in profile-actions.ts and can NOT be changed here.
 // ---------------------------------------------------------------------------
 

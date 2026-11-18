@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { type ForgotPasswordState, forgotPasswordAction } from "@/lib/auth-actions";
-import { PhoneField } from "./form-parts";
+import { Field } from "./form-parts";
 
 const initialState: ForgotPasswordState = {};
 
@@ -17,14 +17,14 @@ export function ForgotPasswordForm() {
           {state.message}
         </p>
       ) : null}
-      <PhoneField
-        label="Email or phone"
+      <Field
+        label="Email"
         name="identifier"
-        type="tel"
-        autoComplete="username"
+        type="email"
+        autoComplete="email"
         autoCapitalize="none"
         spellCheck={false}
-        hint="Email works as-is; for a phone number pick its country code. We email a reset link."
+        hint="We email a reset link to the address on your account."
         defaultValue={state.values?.identifier ?? ""}
         required
       />

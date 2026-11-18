@@ -1,7 +1,7 @@
 // Global leaderboard: AGGREGATED career stats for every active (non-suspended)
 // player. The public_leaderboard flag does NOT hide anyone from this board; it
 // only governs peer profile visibility. Never exposes individual rivalry scores,
-// head-to-head matchups, emails or phone numbers.
+// head-to-head matchups, or emails.
 // Framework-free so it is unit-testable.
 
 import { and, eq } from "drizzle-orm";

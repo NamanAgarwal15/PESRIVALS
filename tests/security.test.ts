@@ -11,7 +11,6 @@ import { passwordSchema, signUpUser } from "@/lib/auth-helpers";
 import { createPasswordResetToken, resetPasswordWithToken, sha256 } from "@/lib/password-reset";
 import { clearRateLimit, consumeRateLimit } from "@/lib/rate-limit";
 import { detectImageType } from "@/lib/image-bytes";
-import { applyCountryCode, DEFAULT_COUNTRY_CODE } from "@/lib/country-codes";
 
 const RUN = randomBytes(4).toString("hex");
 const createdUserIds = new Set<string>();
@@ -24,7 +23,6 @@ async function makeUser(label: string) {
     displayName: "Security Test",
     password: "hunter2pass1",
     email: addr,
-    phone: `+9198${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`,
   });
   if (!result.ok) throw new Error(`signup failed: ${JSON.stringify(result.errors)}`);
   createdUserIds.add(result.user.id);
@@ -139,13 +137,3 @@ describe("image magic-byte detection", () => {
     expect(detectImageType(new Uint8Array())).toBeNull();
   });
 });
-
-describe("country code handling", () => {
-  it("prepends the selected code but keeps explicit + prefixes", () => {
-    expect(applyCountryCode("9876543210", DEFAULT_COUNTRY_CODE)).toBe("+919876543210");
-    expect(applyCountryCode("9876543210", "+44")).toBe("+449876543210");
-    expect(applyCountryCode("+447400123456", "+91")).toBe("+447400123456");
-    expect(applyCountryCode("", "+91")).toBe("");
-  });
-});
-

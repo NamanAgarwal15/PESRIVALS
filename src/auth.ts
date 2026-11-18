@@ -34,7 +34,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        identifier: { label: "Username, email or phone" },
+        identifier: { label: "Username or email" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
@@ -57,7 +57,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
     Credentials({
       id: "otp",
       credentials: {
-        identifier: { label: "Email or phone" },
+        identifier: { label: "Email" },
         code: { label: "6-digit code", type: "text" },
       },
       async authorize(credentials) {

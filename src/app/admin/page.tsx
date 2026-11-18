@@ -87,7 +87,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
         <CardHeader>
           <CardTitle>Users &amp; account recovery</CardTitle>
           <form className="flex gap-2 pt-2">
-            <Input name="q" defaultValue={q} placeholder="Search username, name, email, phone" className="h-10 flex-1" />
+            <Input name="q" defaultValue={q} placeholder="Search username, name, email" className="h-10 flex-1" />
             <Button type="submit" variant="outline" className="h-10">Search</Button>
           </form>
         </CardHeader>
@@ -98,7 +98,6 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                 <span className="font-semibold">@{u.username}</span>
                 <span className="text-muted-foreground">{u.displayName}</span>
                 <span>{u.email ?? "no email"}</span>
-                <span>{u.phone ?? "no phone"}</span>
                 <span className="uppercase">{u.role}</span>
                 <span className={u.suspended ? "text-loss" : "text-win"}>
                   {u.suspended ? "suspended" : "active"}

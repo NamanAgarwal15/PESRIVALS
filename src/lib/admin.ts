@@ -37,7 +37,6 @@ export async function listUsers(search = "") {
       username: users.username,
       displayName: users.displayName,
       email: users.email,
-      phone: users.phone,
       role: users.role,
       suspended: users.suspended,
       publicLeaderboard: users.publicLeaderboard,
@@ -50,7 +49,6 @@ export async function listUsers(search = "") {
             ilike(users.username, like),
             ilike(users.displayName, like),
             ilike(users.email, like),
-            ilike(users.phone, like),
           )
         : undefined,
     )

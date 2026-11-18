@@ -4,7 +4,6 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { and, eq, sql } from "drizzle-orm";
-import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { z } from "zod";
 import { db } from "@/db";
 import { loginThrottle, oauthAccounts, users } from "@/db/schema";
@@ -20,7 +19,6 @@ export const THROTTLE_MAX_FAILURES = 5;
 export const THROTTLE_WINDOW_MINUTES = 15;
 export const THROTTLE_LOCK_MINUTES = 15;
 
-const DEFAULT_PHONE_COUNTRY = "IN";
 const MAX_IDENTIFIER_LENGTH = 254;
 const MAX_PASSWORD_LENGTH = 128;
 
@@ -99,12 +97,6 @@ export function isGoogleEnabled(): boolean {
 // Validation
 // ---------------------------------------------------------------------------
 
-/** Returns the phone number in E.164 form, or null if it is not a valid number. */
-export function normalizePhone(input: string): string | null {
-  const parsed = parsePhoneNumberFromString(input.trim(), DEFAULT_PHONE_COUNTRY);
-  return parsed?.isValid() ? parsed.number : null;
-}
-
 export const usernameSchema = z
   .string({ error: "Enter a username" })
   .trim()
@@ -113,8 +105,7 @@ export const usernameSchema = z
     /^[a-z0-9_]{3,20}$/,
     "Use 3 to 20 characters: lowercase letters, numbers or underscores",
   )
-  // Login treats an all-digit identifier as a phone number, so an all-digit
-  // username could never be used to log in.
+  // All-digit usernames are rejected to keep usernames distinct from numbers.
   .refine((v) => !/^[0-9]+$/.test(v), "Username cannot be only numbers")
   .refine((v) => !RESERVED_USERNAMES.has(v), "That username is not available");
 
@@ -151,36 +142,14 @@ export const signUpSchema = z.object({
       .pipe(z.email("Enter a valid email address"))
       .nullable(),
   ),
-  phone: z.preprocess(
-    blankToNull,
-    z
-      .string()
-      .transform((v, ctx) => {
-        const e164 = normalizePhone(v);
-        if (!e164) {
-          ctx.addIssue({ code: "custom", message: "Enter a valid phone number" });
-          return z.NEVER;
-        }
-        return e164;
-      })
-      .nullable(),
-  ),
 }).superRefine((data, ctx) => {
-  // New signups must provide BOTH recovery channels. Existing live users who
-  // signed up before this rule keep their accounts and can add the missing
-  // channel from /home (Account Settings) — this only runs on new signups.
+  // New signups must provide an email (recovery + login codes). Older accounts
+  // without one can add it from Profile & Security.
   if (!data.email) {
     ctx.addIssue({
       code: "custom",
       path: ["email"],
       message: "Enter an email address for account recovery.",
-    });
-  }
-  if (!data.phone) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["phone"],
-      message: "Enter a phone number for account recovery.",
     });
   }
 });
@@ -206,7 +175,6 @@ export const passwordSchema = z
 
 export type AccountSecurity = {
   email: string | null;
-  phone: string | null;
   googleLinked: boolean;
   publicLeaderboard: boolean;
   hasPassword: boolean;
@@ -215,7 +183,7 @@ export type AccountSecurity = {
 /** Recovery channels + Google link status for the logged-in user. */
 export async function getAccountSecurity(userId: string): Promise<AccountSecurity | null> {
   const [row] = await db
-    .select({ email: users.email, phone: users.phone, publicLeaderboard: users.publicLeaderboard, passwordHash: users.passwordHash })
+    .select({ email: users.email, publicLeaderboard: users.publicLeaderboard, passwordHash: users.passwordHash })
     .from(users)
     .where(eq(users.id, userId));
   if (!row) return null;
@@ -223,7 +191,7 @@ export async function getAccountSecurity(userId: string): Promise<AccountSecurit
     .select({ id: oauthAccounts.id })
     .from(oauthAccounts)
     .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")));
-  return { email: row.email, phone: row.phone, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard, hasPassword: Boolean(row.passwordHash) };
+  return { email: row.email, googleLinked: Boolean(link), publicLeaderboard: row.publicLeaderboard, hasPassword: Boolean(row.passwordHash) };
 }
 
 export type FieldErrors = Partial<Record<string, string>>;
@@ -254,9 +222,6 @@ function duplicateFieldErrors(constraint: string): FieldErrors {
   if (constraint.includes("email")) {
     return { email: "That email is already in use" };
   }
-  if (constraint.includes("phone")) {
-    return { phone: "That phone number is already in use" };
-  }
   return { username: "That username is already taken" };
 }
 
@@ -269,7 +234,6 @@ export type SignUpInput = {
   displayName: unknown;
   password: unknown;
   email?: unknown;
-  phone?: unknown;
 };
 
 export type SignUpResult =
@@ -281,21 +245,17 @@ export async function signUpUser(input: SignUpInput): Promise<SignUpResult> {
   if (!parsed.success) {
     return { ok: false, errors: fieldErrorsFrom(parsed.error) };
   }
-  const { username, displayName, password, email, phone } = parsed.data;
+  const { username, displayName, password, email } = parsed.data;
 
   // Friendly per-field messages. The unique constraints below are what
   // actually guarantee uniqueness if two sign-ups race.
   let byUsername: { id: string }[] = [];
   let byEmail: { id: string }[] = [];
-  let byPhone: { id: string }[] = [];
   try {
-    [byUsername, byEmail, byPhone] = await Promise.all([
+    [byUsername, byEmail] = await Promise.all([
       db.select({ id: users.id }).from(users).where(eq(users.username, username)),
       email
         ? db.select({ id: users.id }).from(users).where(eq(users.email, email))
-        : [],
-      phone
-        ? db.select({ id: users.id }).from(users).where(eq(users.phone, phone))
         : [],
     ]);
   } catch {
@@ -306,7 +266,6 @@ export async function signUpUser(input: SignUpInput): Promise<SignUpResult> {
   const errors: FieldErrors = {};
   if (byUsername.length) errors.username = "That username is already taken";
   if (byEmail.length) errors.email = "That email is already in use";
-  if (byPhone.length) errors.phone = "That phone number is already in use";
   if (Object.keys(errors).length) return { ok: false, errors };
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
@@ -318,7 +277,6 @@ export async function signUpUser(input: SignUpInput): Promise<SignUpResult> {
         username,
         displayName,
         email,
-        phone,
         passwordHash,
         onboarded: true,
         updatedAt: new Date(),
@@ -338,7 +296,7 @@ export async function signUpUser(input: SignUpInput): Promise<SignUpResult> {
 // ---------------------------------------------------------------------------
 
 export type ParsedIdentifier = {
-  kind: "email" | "phone" | "username";
+  kind: "email" | "username";
   /** Value to look up, or null when it can never match a user. */
   lookup: string | null;
   /** Row key in login_throttle. */
@@ -352,12 +310,6 @@ export function parseIdentifier(raw: string): ParsedIdentifier | null {
   if (id.includes("@")) {
     const email = id.toLowerCase();
     return { kind: "email", lookup: email, throttleKey: `cred:${email}` };
-  }
-
-  if (id.startsWith("+") || /^[0-9\s-]+$/.test(id)) {
-    const e164 = normalizePhone(id);
-    const normalized = e164 ?? id.replace(/[\s-]/g, "");
-    return { kind: "phone", lookup: e164, throttleKey: `cred:${normalized}` };
   }
 
   const username = id.toLowerCase();
@@ -396,17 +348,13 @@ async function clearThrottle(key: string): Promise<void> {
 async function findUserForLogin(id: ParsedIdentifier): Promise<UserRow | undefined> {
   if (!id.lookup) return undefined;
   const column =
-    id.kind === "email"
-      ? users.email
-      : id.kind === "phone"
-        ? users.phone
-        : users.username;
+    id.kind === "email" ? users.email : users.username;
   const [row] = await db.select().from(users).where(eq(column, id.lookup));
   return row;
 }
 
 /**
- * Checks an identifier (username, email or phone) and password.
+ * Checks an identifier (username or email) and password.
  * Returns null for every kind of failure (unknown user, wrong password,
  * throttled) so callers cannot tell them apart.
  */

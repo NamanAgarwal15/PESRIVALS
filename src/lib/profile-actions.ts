@@ -6,8 +6,7 @@ import { eq } from "drizzle-orm";
 import { auth, unstable_update } from "@/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { BCRYPT_COST, normalizePhone, passwordSchema } from "@/lib/auth-helpers";
-import { applyCountryCode, DEFAULT_COUNTRY_CODE } from "@/lib/country-codes";
+import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
 import {
   type ChangeKind,
   applyProfileChange,
@@ -21,7 +20,7 @@ const text = (fd: FormData, k: string) => {
   const v = fd.get(k);
   return typeof v === "string" ? v : "";
 };
-const kinds = ["email", "phone", "password"] as const;
+const kinds = ["email", "password"] as const;
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -51,11 +50,6 @@ export async function commitProfileChangeAction(
   if (kind === "email") {
     value = text(formData, "value").trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return { ok: false, error: "Enter a valid email address." };
-  } else if (kind === "phone") {
-    const raw = text(formData, "value").trim();
-    const e164 = normalizePhone(applyCountryCode(raw, text(formData, "countryCode") || DEFAULT_COUNTRY_CODE));
-    if (!e164) return { ok: false, error: "Enter a valid phone number." };
-    value = e164;
   } else {
     const parsed = passwordSchema.safeParse(text(formData, "value"));
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Weak password." };
@@ -78,5 +72,5 @@ export async function commitProfileChangeAction(
   const done = await applyProfileChange(userId, kind, value);
   if (!done.ok) return { ok: false, error: done.error };
   await unstable_update({});
-  return { ok: true, message: `${kind === "password" ? "Password" : kind === "email" ? "Email" : "Phone"} updated.` };
+  return { ok: true, message: `${kind === "password" ? "Password" : "Email"} updated.` };
 }

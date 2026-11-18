@@ -22,7 +22,7 @@ export type ResetPasswordResult =
   | { ok: false; code: "invalid_token" | "weak_password" };
 
 /**
- * Looks the user up by email or phone and creates a fresh reset token.
+ * Looks the user up by email and creates a fresh reset token.
  * The raw token is returned once for the reset link; only its SHA-256 hash
  * is persisted.
  */
@@ -31,18 +31,10 @@ export async function createPasswordResetToken(
   passwordHash: (pw: string) => Promise<string>,
 ): Promise<ResetRequestResult> {
   const email = identifier.trim().toLowerCase();
-  const [byEmail] = await db
+  const [user] = await db
     .select({ id: users.id, email: users.email })
     .from(users)
     .where(eq(users.email, email));
-  const user = byEmail
-    ? byEmail
-    : (
-        await db
-          .select({ id: users.id, email: users.email })
-          .from(users)
-          .where(eq(users.phone, identifier.replace(/[\s()-]/g, "")))
-      )[0];
   if (!user) return { ok: false, code: "not_found" };
 
   const token = randomBytes(32).toString("hex");

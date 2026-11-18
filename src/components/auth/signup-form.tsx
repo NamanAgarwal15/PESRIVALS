@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { type SignUpState, signUpAction } from "@/lib/auth-actions";
-import { Field, FormError, PhoneField } from "./form-parts";
+import { Field, FormError } from "./form-parts";
 
 const initialState: SignUpState = {};
 
@@ -50,23 +50,13 @@ export function SignupForm() {
         required
       />
       <Field
-        label="Email (required)"
+        label="Email"
         name="email"
         type="email"
         autoComplete="email"
         hint="Used for account recovery and login codes."
         error={errors.email}
         defaultValue={values?.email ?? ""}
-        required
-      />
-      <PhoneField
-        label="Phone (required)"
-        name="phone"
-        type="tel"
-        autoComplete="tel-national"
-        hint="Indian numbers work without +91. Pick a code for others."
-        error={errors.phone}
-        defaultValue={values?.phone ?? ""}
         required
       />
       <div className="flex flex-col gap-1.5">

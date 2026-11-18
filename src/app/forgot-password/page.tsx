@@ -9,7 +9,7 @@ export default function ForgotPasswordPage() {
   return (
     <AuthShell
       title="Forgot password"
-      description="Enter the email or phone on your account and we'll send a reset link."
+      description="Enter the email on your account and we'll send a reset link."
       footer={
         <Link href="/login" className="text-primary underline-offset-4 hover:underline">
           ← Back to login

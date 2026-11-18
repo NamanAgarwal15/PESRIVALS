@@ -57,7 +57,6 @@ async function HomeContent() {
             username={session.user.username}
             displayName={session.user.displayName}
             email={security.email}
-            phone={security.phone}
             hasPassword={security.hasPassword}
             googleLinked={security.googleLinked}
             googleEnabled={isGoogleEnabled()}

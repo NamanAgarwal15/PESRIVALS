@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PhoneField } from "@/components/auth/form-parts";
 import { linkGoogleAction, setProfileVisibilityAction } from "@/lib/auth-actions";
 import {
   type ProfileState,
@@ -14,7 +13,7 @@ import {
   requestProfileOtpAction,
 } from "@/lib/profile-actions";
 
-type Kind = "password" | "email" | "phone";
+type Kind = "password" | "email";
 
 function ChangeSection({ kind, title, hasPassword }: { kind: Kind; title: string; hasPassword?: boolean }) {
   const router = useRouter();
@@ -49,7 +48,7 @@ function ChangeSection({ kind, title, hasPassword }: { kind: Kind; title: string
     });
   }
 
-  const label = kind === "password" ? "New password" : kind === "email" ? "New email" : "New phone";
+  const label = kind === "password" ? "New password" : "New email";
   return (
     <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
       <button
@@ -65,9 +64,7 @@ function ChangeSection({ kind, title, hasPassword }: { kind: Kind; title: string
       {msg?.error ? <p role="alert" className="text-sm text-destructive">{msg.error}</p> : null}
       {open ? (
         <form onSubmit={submit} className="flex flex-col gap-3">
-          {kind === "phone" ? (
-            <PhoneField label={label} name="value" type="tel" required />
-          ) : (
+          {(
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={`${kind}-value`}>{label}</Label>
               <Input
@@ -110,7 +107,6 @@ export function ProfilePanel({
   username,
   displayName,
   email,
-  phone,
   hasPassword,
   googleLinked,
   googleEnabled,
@@ -119,7 +115,6 @@ export function ProfilePanel({
   username: string;
   displayName: string;
   email: string | null;
-  phone: string | null;
   hasPassword: boolean;
   googleLinked: boolean;
   googleEnabled: boolean;
@@ -151,7 +146,6 @@ export function ProfilePanel({
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
               <dt className="text-muted-foreground">Name</dt><dd>{displayName}</dd>
               <dt className="text-muted-foreground">Email</dt><dd>{email ?? "not set"}</dd>
-              <dt className="text-muted-foreground">Phone</dt><dd>{phone ?? "not set"}</dd>
               <dt className="text-muted-foreground">Google</dt>
               <dd className={googleLinked ? "text-win" : undefined}>{googleLinked ? "linked" : "not linked"}</dd>
             </dl>
@@ -161,13 +155,12 @@ export function ProfilePanel({
               </form>
             ) : null}
             <p className="text-xs text-muted-foreground">
-              {email && phone
-                ? "Changing your email needs a code sent to your phone, and changing your phone needs a code sent to your email."
-                : "Changes are confirmed with a code sent to the contact method you have on file."}
+              {email
+                ? "Changes are confirmed with a code sent to your email."
+                : "Add an email so you can recover your account and receive login codes."}
             </p>
             <ChangeSection kind="password" title="Change password" hasPassword={hasPassword} />
             <ChangeSection kind="email" title={email ? "Change email" : "Add email"} />
-            <ChangeSection kind="phone" title={phone ? "Change phone" : "Add phone"} />
             <label className="flex items-start gap-2 border-t border-border/50 pt-3 text-sm">
               <input
                 type="checkbox"

@@ -1,7 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CountryCodeSelect } from "./country-code-select";
 
 export function Field({
   label,
@@ -49,41 +48,6 @@ export function FormError({ children }: { children: ReactNode }) {
     >
       {children}
     </p>
-  );
-}
-
-/**
- * Phone input with the country-code dropdown aligned INSIDE the input row
- * (never beside the label): label on its own line above, then
- * [ +91 ▾ ][ number ] in one `items-stretch` row of matching height.
- */
-export function PhoneField({
-  label,
-  hint,
-  error,
-  name,
-  selectName = "countryCode",
-  ...inputProps
-}: {
-  label: string;
-  hint?: string;
-  error?: string;
-  name: string;
-  selectName?: string;
-} & Omit<ComponentProps<"input">, "name" | "id">) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={name}>{label}</Label>
-      <div className="flex items-stretch gap-2">
-        <CountryCodeSelect name={selectName} />
-        <Input id={name} name={name} className="h-11 flex-1" {...inputProps} />
-      </div>
-      {error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : hint ? (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      ) : null}
-    </div>
   );
 }
 
