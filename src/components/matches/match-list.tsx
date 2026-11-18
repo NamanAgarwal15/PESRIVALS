@@ -1,6 +1,11 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { type ReactNode, useState, useTransition } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { RivalryMatch } from "@/lib/match-helpers";
+import { disputeMatchAction, resolveMatchDisputeAction } from "@/lib/match-actions";
 import type { MatchOutcome } from "@/lib/match-stats";
 
 const OUTCOME: Record<MatchOutcome, { label: string; className: string }> = {
@@ -61,6 +66,19 @@ function MatchCard({
   opponentUsername: string;
 }) {
   const outcome = OUTCOME[match.outcome];
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const disputed = match.status === "disputed";
+
+  function run(action: () => Promise<{ ok: boolean; error?: string }>) {
+    setError(null);
+    start(async () => {
+      const r = await action();
+      if (r.ok) router.refresh();
+      else setError(r.error ?? "Something went wrong.");
+    });
+  }
 
   return (
     <Card size="sm">
@@ -78,7 +96,9 @@ function MatchCard({
           {match.decidedOnPens ? (
             <Tag className="bg-accent-pink/15 text-accent-pink">PENS</Tag>
           ) : null}
-          {match.needsReview ? (
+          {disputed ? (
+            <Tag className="bg-loss/15 text-loss">DISPUTED</Tag>
+          ) : match.needsReview ? (
             <Tag className="bg-draw/15 text-draw">REVIEW</Tag>
           ) : null}
         </div>
@@ -100,6 +120,44 @@ function MatchCard({
         {match.remark ? (
           <p className="text-sm break-words text-muted-foreground">“{match.remark}”</p>
         ) : null}
+
+        {disputed ? (
+          <p className="text-xs text-muted-foreground">
+            Disputed: this match is not counted in any stats until it is resolved.
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {disputed ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => run(() => resolveMatchDisputeAction(match.id))}
+            >
+              Resolve / Confirm
+            </Button>
+          ) : !match.createdByMe ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                if (window.confirm("Dispute this match? It will stop counting until it is resolved.")) {
+                  run(() => disputeMatchAction(match.id));
+                }
+              }}
+            >
+              Dispute
+            </Button>
+          ) : null}
+          {error ? (
+            <span role="alert" className="text-xs text-destructive">
+              {error}
+            </span>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

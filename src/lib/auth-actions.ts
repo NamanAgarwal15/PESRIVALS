@@ -20,6 +20,8 @@ import {
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { createPasswordResetToken, resetPasswordWithToken } from "@/lib/password-reset";
 import { sendOtp } from "@/lib/otp";
+import { setDisplayName } from "@/lib/profile";
+import { revalidatePath } from "next/cache";
 
 const text = (formData: FormData, name: string) => {
   const value = formData.get(name);
@@ -281,4 +283,19 @@ export async function setProfileVisibilityAction(visible: boolean): Promise<{ ok
     .where(eq(users.id, session.user.id));
   await unstable_update({});
   return { ok: true };
+}
+
+/** Updates the signed-in player's display name (trimmed, 2-50 characters). */
+export async function updateDisplayNameAction(
+  raw: string,
+): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const result = await setDisplayName(session.user.id, typeof raw === "string" ? raw : "");
+  if (result.ok) {
+    revalidatePath("/home");
+    revalidatePath("/leaderboard");
+    revalidatePath("/player/[username]", "page");
+  }
+  return result;
 }

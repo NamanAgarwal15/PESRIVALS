@@ -66,6 +66,8 @@ export const saveMatchInputSchema = z.object({
   mySide: z.enum(["left", "right"]),
   host: z.enum(["home", "away"]),
   decidedOnPens: z.boolean().default(false),
+  // Set by the browser when any field was yellow; the server also re-checks.
+  needsReview: z.boolean().default(false),
   remark: z
     .string()
     .trim()

@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CopyButton } from "@/components/profile/copy-button";
-import { linkGoogleAction, setProfileVisibilityAction } from "@/lib/auth-actions";
+import { linkGoogleAction, setProfileVisibilityAction, updateDisplayNameAction } from "@/lib/auth-actions";
 import {
   type ProfileState,
   commitProfileChangeAction,
@@ -105,6 +105,61 @@ function ChangeSection({ kind, title, hasPassword }: { kind: Kind; title: string
   );
 }
 
+function NameRow({ initial }: { initial: string }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(initial);
+  const [shown, setShown] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  function save(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    start(async () => {
+      const r = await updateDisplayNameAction(name);
+      if (r.ok) {
+        setShown(r.value);
+        setName(r.value);
+        setEditing(false);
+        router.refresh();
+      } else setError(r.error);
+    });
+  }
+
+  if (!editing) {
+    return (
+      <>
+        <dd className="flex items-center gap-2">
+          {shown}
+          <button type="button" onClick={() => setEditing(true)} className="text-xs text-primary underline">
+            Edit
+          </button>
+        </dd>
+      </>
+    );
+  }
+  return (
+    <dd>
+      <form onSubmit={save} className="flex flex-wrap items-center gap-2">
+        <Input
+          aria-label="Display name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          minLength={2}
+          maxLength={50}
+          className="h-9 w-48"
+        />
+        <Button type="submit" disabled={pending} className="h-9">Save</Button>
+        <Button type="button" variant="outline" className="h-9" onClick={() => { setEditing(false); setName(shown); setError(null); }}>
+          Cancel
+        </Button>
+      </form>
+      {error ? <p role="alert" className="mt-1 text-xs text-destructive">{error}</p> : null}
+    </dd>
+  );
+}
+
 function EfootballIdSection({ initial }: { initial: string | null }) {
   const [value, setValue] = useState(initial ?? "");
   const [saved, setSaved] = useState(initial);
@@ -185,7 +240,7 @@ export function ProfilePanel({
               Profile &amp; Security
             </h2>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-              <dt className="text-muted-foreground">Name</dt><dd>{displayName}</dd>
+              <dt className="text-muted-foreground">Name</dt><NameRow initial={displayName} />
               <dt className="text-muted-foreground">Email</dt><dd>{email ?? "not set"}</dd>
               <dt className="text-muted-foreground">Google</dt>
               <dd className={googleLinked ? "text-win" : undefined}>{googleLinked ? "linked" : "not linked"}</dd>

@@ -5,7 +5,8 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries } from "@/db/schema";
-import { type ExtractResult, extractMatchFromScreenshot } from "@/lib/gemini-extract";
+import { assessConfidence } from "@/lib/confidence";
+import { type IngestResult, VisionVlmIngestor } from "@/lib/ingestors";
 import { type ExtractedSide, saveMatchInputSchema } from "@/lib/match-schema";
 import { type MatchOutcome, type StatKey, STAT_KEYS, matchOutcome } from "@/lib/match-stats";
 import { isUuid } from "@/lib/rivalry-helpers";
@@ -75,7 +76,7 @@ function pgErrorCode(err: unknown): string | null {
 // ---------------------------------------------------------------------------
 
 export type ExtractForMemberResult =
-  | ExtractResult
+  | IngestResult
   | { ok: false; code: "not_found"; error: string };
 
 /** Runs the Gemini extraction, but only for a member of the active rivalry. */
@@ -86,7 +87,7 @@ export async function extractForMember(
 ): Promise<ExtractForMemberResult> {
   const rivalry = await findActiveRivalry(currentUserId, rivalryId);
   if (!rivalry) return { ok: false, code: "not_found", error: "Rivalry not found" };
-  return extractMatchFromScreenshot(image);
+  return VisionVlmIngestor.ingest(image);
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +127,9 @@ export async function saveMatchForUser(
     };
   }
   const { rivalryId, extracted, mySide, host, decidedOnPens, remark } = parsed.data;
+  // Yellow if the reader flagged anything (client-reported) or our own checks do.
+  const needsReview =
+    parsed.data.needsReview || assessConfidence(extracted).hasYellow;
 
   const rivalry = await findActiveRivalry(currentUserId, rivalryId);
   if (!rivalry) return { ok: false, error: "Rivalry not found" };
@@ -145,7 +149,7 @@ export async function saveMatchForUser(
     createdBy: currentUserId,
     source: "screenshot",
     status: "confirmed",
-    needsReview: false,
+    needsReview,
     decidedOnPens,
     remark,
     ...slotColumns(iAmUserA ? "A" : "B", mine),
@@ -197,6 +201,9 @@ export type RivalryMatch = {
   /** "home" when the current user hosted, "away" when the opponent did. */
   venue: "home" | "away" | null;
   needsReview: boolean;
+  status: "confirmed" | "pending" | "disputed";
+  /** True when the current user uploaded the match. */
+  createdByMe: boolean;
   remark: string | null;
 };
 
@@ -222,6 +229,8 @@ export async function getRivalryMatches(
       userBGoals: matches.userBGoals,
       decidedOnPens: matches.decidedOnPens,
       needsReview: matches.needsReview,
+      status: matches.status,
+      createdBy: matches.createdBy,
       remark: matches.remark,
     })
     .from(matches)
@@ -242,9 +251,73 @@ export async function getRivalryMatches(
       opponentGoals,
       decidedOnPens: row.decidedOnPens,
       needsReview: row.needsReview,
+      status: row.status,
+      createdByMe: row.createdBy === currentUserId,
       outcome: matchOutcome(myGoals, opponentGoals, row.decidedOnPens),
       venue: row.hostUserId === null ? null : row.hostUserId === currentUserId ? "home" : "away",
       remark: row.remark,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Dispute / resolve
+// ---------------------------------------------------------------------------
+
+export type DisputeResult = { ok: true; rivalryId: string } | { ok: false; error: string };
+
+async function loadMatchForActor(actorId: string, isAdmin: boolean, matchId: unknown) {
+  if (!isUuid(actorId) || !isUuid(matchId)) return null;
+  const [row] = await db
+    .select({
+      id: matches.id,
+      status: matches.status,
+      rivalryId: matches.rivalryId,
+      userAId: rivalries.userAId,
+      userBId: rivalries.userBId,
+    })
+    .from(matches)
+    .innerJoin(rivalries, eq(matches.rivalryId, rivalries.id))
+    .where(and(eq(matches.id, matchId), eq(rivalries.status, "active")));
+  if (!row) return null;
+  if (!isAdmin && row.userAId !== actorId && row.userBId !== actorId) return null;
+  return row;
+}
+
+/** A rivalry member (or admin) flags a confirmed match; it stops counting until resolved. */
+export async function disputeMatch(
+  actorId: string,
+  isAdmin: boolean,
+  matchId: unknown,
+  reason?: string,
+): Promise<DisputeResult> {
+  const row = await loadMatchForActor(actorId, isAdmin, matchId);
+  if (!row) return { ok: false, error: "Match not found" };
+  if (row.status !== "confirmed") return { ok: false, error: "Only a confirmed match can be disputed" };
+  const note = reason?.trim().slice(0, 200) || null;
+  await db
+    .update(matches)
+    .set({
+      status: "disputed",
+      needsReview: true,
+      ...(note ? { remark: note } : {}),
+    })
+    .where(and(eq(matches.id, row.id), eq(matches.status, "confirmed")));
+  return { ok: true, rivalryId: row.rivalryId };
+}
+
+/** A rivalry member (or admin) re-confirms a disputed match; it counts again. */
+export async function resolveMatchDispute(
+  actorId: string,
+  isAdmin: boolean,
+  matchId: unknown,
+): Promise<DisputeResult> {
+  const row = await loadMatchForActor(actorId, isAdmin, matchId);
+  if (!row) return { ok: false, error: "Match not found" };
+  if (row.status !== "disputed") return { ok: false, error: "This match is not disputed" };
+  await db
+    .update(matches)
+    .set({ status: "confirmed", needsReview: false })
+    .where(and(eq(matches.id, row.id), eq(matches.status, "disputed")));
+  return { ok: true, rivalryId: row.rivalryId };
 }

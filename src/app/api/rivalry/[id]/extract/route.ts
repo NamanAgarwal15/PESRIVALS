@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import type { ExtractFailureCode } from "@/lib/gemini-extract";
+import type { IngestFailureCode } from "@/lib/ingestors/types";
 import { detectImageType } from "@/lib/image-bytes";
 import { extractForMember } from "@/lib/match-helpers";
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
@@ -15,13 +15,14 @@ const json = (body: unknown, status: number) =>
 
 const fail = (error: string, status: number) => json({ ok: false, error }, status);
 
-const STATUS: Record<ExtractFailureCode | "not_found", number> = {
+const STATUS: Record<IngestFailureCode | "not_found", number> = {
   not_found: 404,
   invalid_image: 400,
   too_large: 413,
   not_stats_screen: 422,
   not_configured: 503,
   unavailable: 503,
+  invalid_data: 400,
 };
 
 /**
@@ -78,7 +79,7 @@ export async function POST(
   try {
     const result = await extractForMember(session.user.id, id, { bytes });
     if (!result.ok) return fail(result.error, STATUS[result.code]);
-    return json({ ok: true, extracted: result.extracted }, 200);
+    return json({ ok: true, extracted: result.extracted, confidence: result.confidence }, 200);
   } catch (err) {
     console.error(
       `[extract] unexpected failure: ${err instanceof Error ? `${err.name}: ${err.message}` : "unknown"}`,

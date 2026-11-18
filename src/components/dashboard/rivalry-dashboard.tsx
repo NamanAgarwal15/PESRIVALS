@@ -155,7 +155,9 @@ export function RivalryDashboard({
   const { summary, hosting, comparison, series, records } = model;
 
   const filteredMatchNos = new Set(model.filtered.map((m) => m.matchNo));
-  const filteredDisplay = displayMatches.filter((m) => filteredMatchNos.has(m.matchNo));
+  const filteredDisplay = displayMatches.filter(
+    (m) => m.status === "disputed" || filteredMatchNos.has(m.matchNo),
+  );
   const teams: ChartTeams = Object.fromEntries(
     displayMatches.map((m) => [
       m.matchNo,

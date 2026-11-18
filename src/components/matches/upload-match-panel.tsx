@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { ConfidenceReport } from "@/lib/confidence";
 import { saveExtractedMatch } from "@/lib/match-actions";
 import type { ExtractedMatch } from "@/lib/match-schema";
 import {
@@ -60,6 +61,7 @@ export function UploadMatchPanel({
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<ExtractedMatch | null>(null);
+  const [confidence, setConfidence] = useState<ConfidenceReport | null>(null);
   const [mySide, setMySide] = useState<Side | null>(null);
   const [host, setHost] = useState<Host | null>(null);
   const [decidedOnPens, setDecidedOnPens] = useState(false);
@@ -70,6 +72,7 @@ export function UploadMatchPanel({
 
   function reset() {
     setExtracted(null);
+    setConfidence(null);
     setMySide(null);
     setHost(null);
     setDecidedOnPens(false);
@@ -105,13 +108,14 @@ export function UploadMatchPanel({
         return;
       }
       const result = (await response.json().catch(() => null)) as
-        | { ok: true; extracted: ExtractedMatch }
+        | { ok: true; extracted: ExtractedMatch; confidence?: ConfidenceReport }
         | { ok: false; error?: string }
         | null;
 
       if (result?.ok) {
         reset();
         setExtracted(result.extracted);
+        setConfidence(result.confidence ?? null);
       } else {
         setError(result?.error ?? "Could not read that screenshot. Please try again.");
       }
@@ -133,6 +137,7 @@ export function UploadMatchPanel({
         host,
         decidedOnPens,
         remark,
+        needsReview: confidence?.hasYellow ?? false,
       });
       if (result.ok) {
         toast.success(`Match #${result.matchNo} saved`);
@@ -181,6 +186,8 @@ export function UploadMatchPanel({
 
   // ---- Step 2: read-only review + match context ----
   const { left, right } = extracted;
+  const isYellow = (side: Side, key: string) =>
+    (confidence?.yellow[side] as string[] | undefined)?.includes(key) ?? false;
 
   return (
     <Card>
@@ -200,12 +207,41 @@ export function UploadMatchPanel({
           <SideHeading label="Right" team={right.team} />
         </div>
 
+        {confidence?.hasYellow ? (
+          <div
+            role="status"
+            className="rounded-lg border border-draw/50 bg-draw/10 px-3 py-2 text-sm"
+          >
+            <p className="font-semibold text-draw">Yellow: please double-check these against your screenshot</p>
+            <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+              {confidence.warnings.slice(0, 8).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-muted-foreground">
+              It still saves and counts right away, but the match is marked for review.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm font-medium text-win">Green: every value looks consistent.</p>
+        )}
+
         <dl className="flex flex-col divide-y divide-border text-sm">
           {STAT_KEYS.map((key) => (
-            <div key={key} className="grid grid-cols-[3rem_1fr_3rem] items-center py-1.5">
-              <dd className="text-left font-semibold tabular-nums">{left[key] ?? "–"}</dd>
+            <div key={key} className="grid grid-cols-[3.5rem_1fr_3.5rem] items-center py-1.5">
+              <dd
+                data-confidence={isYellow("left", key) ? "yellow" : "green"}
+                className={`rounded-md px-1 text-left font-semibold tabular-nums ${isYellow("left", key) ? "bg-draw/20 text-draw ring-1 ring-draw/50" : ""}`}
+              >
+                {left[key] ?? "–"}
+              </dd>
               <dt className="text-center text-muted-foreground">{STAT_LABELS[key]}</dt>
-              <dd className="text-right font-semibold tabular-nums">{right[key] ?? "–"}</dd>
+              <dd
+                data-confidence={isYellow("right", key) ? "yellow" : "green"}
+                className={`rounded-md px-1 text-right font-semibold tabular-nums ${isYellow("right", key) ? "bg-draw/20 text-draw ring-1 ring-draw/50" : ""}`}
+              >
+                {right[key] ?? "–"}
+              </dd>
             </div>
           ))}
         </dl>

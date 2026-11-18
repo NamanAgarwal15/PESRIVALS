@@ -5,6 +5,7 @@
 // put in an error message. Log lines name keys as KEY_1 / KEY_2 only.
 
 import { z } from "zod";
+import { type ConfidenceReport, assessConfidence } from "@/lib/confidence";
 import { type ExtractedMatch, extractedMatchSchema } from "@/lib/match-schema";
 import { SCREENSHOT_MAX_BYTES, STAT_KEYS } from "@/lib/match-stats";
 
@@ -35,7 +36,7 @@ export type ExtractFailureCode =
   | "unavailable";
 
 export type ExtractResult =
-  | { ok: true; extracted: ExtractedMatch }
+  | { ok: true; extracted: ExtractedMatch; confidence: ConfidenceReport }
   | { ok: false; code: ExtractFailureCode; error: string };
 
 const failure = (code: ExtractFailureCode, error: string): ExtractResult => ({
@@ -110,7 +111,8 @@ For each side (left = the team shown on the left of the screen, right = the team
 Rules:
 - Never swap the sides. The left column belongs to the left team.
 - Copy the digits you can see. Do not estimate, calculate or guess.
-- If a statistic is not on the screen or cannot be read, use null for it.`;
+- If a statistic is not on the screen or cannot be read, use null for it.
+- low_confidence_fields: list every value you were not fully sure you read correctly, as "left.<field>" or "right.<field>" (for example "left.shots" or "right.goals"). Use an empty list when you are sure of everything.`;
 
 const statSchema = { type: "INTEGER", nullable: true };
 const sideSchema = {
@@ -130,6 +132,7 @@ const RESPONSE_SCHEMA = {
     rejection_reason: { type: "STRING", nullable: true },
     left: sideSchema,
     right: sideSchema,
+    low_confidence_fields: { type: "ARRAY", items: { type: "STRING" } },
   },
   required: ["is_valid_efootball_stats_screen", "rejection_reason", "left", "right"],
 };
@@ -150,6 +153,7 @@ const envelopeSchema = z.object({
   rejection_reason: z.string().nullish(),
   left: z.unknown().optional(),
   right: z.unknown().optional(),
+  low_confidence_fields: z.array(z.string()).nullish(),
 });
 
 // Safe OCR clean-ups only: "55%" -> 55, " 12 " -> 12, 7.0 -> 7, and collapsed
@@ -173,7 +177,7 @@ function normalizeSide(side: unknown): unknown {
 }
 
 type Attempt =
-  | { kind: "ok"; extracted: ExtractedMatch }
+  | { kind: "ok"; extracted: ExtractedMatch; modelLow: string[] }
   | { kind: "rejected"; reason: string | null }
   | { kind: "retry"; why: string };
 
@@ -208,7 +212,11 @@ function interpret(payload: unknown): Attempt {
     right: normalizeSide(envelope.data.right),
   });
   if (!match.success) return { kind: "retry", why: "values failed validation" };
-  return { kind: "ok", extracted: match.data };
+  return {
+    kind: "ok",
+    extracted: match.data,
+    modelLow: (envelope.data.low_confidence_fields ?? []).slice(0, 40),
+  };
 }
 
 async function callGemini(
@@ -313,7 +321,13 @@ export async function extractMatchFromScreenshot(image: {
         Math.min(PER_CALL_TIMEOUT_MS, remaining),
       );
 
-      if (attempt.kind === "ok") return { ok: true, extracted: attempt.extracted };
+      if (attempt.kind === "ok") {
+        return {
+          ok: true,
+          extracted: attempt.extracted,
+          confidence: assessConfidence(attempt.extracted, attempt.modelLow),
+        };
+      }
 
       if (attempt.kind === "rejected") {
         const reason = attempt.reason?.replace(/\s+/g, " ").trim().slice(0, 160);

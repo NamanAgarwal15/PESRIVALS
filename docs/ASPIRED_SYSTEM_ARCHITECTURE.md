@@ -63,10 +63,11 @@ An optional `efootball_id` profile field (9 digits, unique when set) that users 
 | Client-side image compression (max 1600px, JPEG 0.85) so uploads stay under Vercel's 4.5 MB body limit (`src/components/matches/upload-match-panel.tsx`) | `Shipped (Today)` |
 | Gemini fallback chain: 3 models × 2 API keys inside a 50 s budget; upstream failure reasons logged server-side | `Shipped (Today)` |
 | Magic-byte PNG/JPEG/WebP validation (`src/lib/image-bytes.ts`) | `Shipped (Today)` |
-| Per-field confidence and review flow | `Next Polish (Immediate)` (see §1.2) |
-| Multi-screen batch upload: Stats + Player Ratings + Match Events | `Roadmap (Future)` |
-| Video keyframe sampling (scene-change frames, perceptual-hash dedupe) | `Roadmap (Future)` |
-| 1-tap tactical playstyle tags: *Possession Game, Quick Counter, Long Ball Counter, Out Wide, Long Ball* | `Roadmap (Future)` |
+| `MatchTelemetryIngestor` interface (`src/lib/ingestors/`) wrapping `VisionVlmIngestor` (screenshot) and `SheetImportIngestor` (historical sheet rows) | `Shipped (Today)` (Phase 2) |
+| Green / yellow per-field confidence: model self-reported uncertainty plus deterministic checks (shots on target > shots, successful passes > passes, possession ≠ 100, missing stats); any yellow sets `needs_review` | `Shipped (Today)` (Phase 2) |
+| Opponent Dispute flow: matches save as `confirmed` instantly; a rival or admin can flag them `disputed`, which pauses them in all W-D-L, career and leaderboard totals until a member or admin resolves them | `Shipped (Today)` (Phase 2) |
+| Single-screenshot-only ingestion. Multi-screen batch upload and video keyframe sampling are **not planned**; the Full Time stats screen stays the only input | `Decision` |
+| 1-tap match context pills (Phase 4): **Playstyle** (*Possession Game, Quick Counter, Long Ball Counter, Out Wide, Long Ball*), **Host / Session memory**, **Extra Time / Penalties**, **Match Stakes / Vibe** | `Roadmap (Future)` |
 
 ## 3. Three-tier data-science pipeline
 
@@ -168,14 +169,14 @@ Password login (`verifyCredentials`) and OTP sending (`sendOtp`) block suspended
 | Prediction / Causal | 0 | 0 | Designed, not built |
 | Observability | 1.5 | 2 | Vercel Analytics and server console logs only |
 
-### 4.6 Known debt to clear in Phase 1
+### 4.6 Known debt (Phase 1 cleared it)
 
 Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` is always `email`; `scripts/setup-live-accounts.mjs` still writes phone numbers; `rivalries.a_public` / `b_public` are unused; `match_status` `pending` and `disputed` and `matches.needs_review` have no flow yet.
 
 ## 5. Sequenced implementation roadmap
 
-1. **Phase 1 — Security, privacy & profile polish.** Enforce suspension in Google OAuth and JWT sessions; wire peer rivalry privacy against always-visible career profiles, with user search and challenge from the leaderboard; add optional `efootball_id`; drop the dead `users.phone` column.
-2. **Phase 2 — Ingestion trust & abstraction.** Introduce `MatchTelemetryIngestor`; add AI green/yellow confidence flags on extracted fields; add the opponent Dispute (`disputed`) flow.
+1. **Phase 1 — Security, privacy & profile polish.** `Shipped (Today)` (commit `7873e69`). Enforce suspension in Google OAuth and JWT sessions; wire peer rivalry privacy against always-visible career profiles, with user search and challenge from the leaderboard; add optional `efootball_id`; drop the dead `users.phone` column.
+2. **Phase 2 — Ingestion trust & abstraction.** `Shipped (Today)`, plus change display name (2–50 characters). Introduce `MatchTelemetryIngestor`; add AI green/yellow confidence flags on extracted fields; add the opponent Dispute (`disputed`) flow.
 3. **Phase 3 — Tier 1B Rivalry EDA Lab & derived indices.** Ship the five derived football indices and the five EDA widgets on the Bento dashboard.
-4. **Phase 4 — Multi-screen batch ingestion & tactical tags.** Multi-screenshot upload (Stats + Ratings + Events) and 1-tap tactical playstyle tags.
+4. **Phase 4 — Match context pills & Stubborn Web Push.** Single screenshot only (no multi-screen, no video). Add 1-tap context pills at save time: Playstyle, Host / Session memory, Extra Time / Penalties, Match Stakes / Vibe. Add **Stubborn Web Push Notifications**: a Service Worker with VAPID keys, persistent alerts using `requireInteraction: true`, and a deliberately multi-step in-app opt-out (several confirmation screens) rather than one-tap disable.
 5. **Phase 5 — Tier 2 & Tier 3 modeling.** Stage 3A Bivariate Poisson and EWMA forecast (N ≥ 5); Stage 3B Glicko-2, tilt detector and clash matrix (N ≥ 20); Tier 2 causal inference (N ≥ 30 tagged matches).

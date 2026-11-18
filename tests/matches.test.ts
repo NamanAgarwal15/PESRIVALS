@@ -271,7 +271,7 @@ describe("extractMatchFromScreenshot", () => {
 
     const result = await extractMatchFromScreenshot({ bytes: JPEG });
 
-    expect(result).toEqual({ ok: true, extracted: EXTRACTED });
+    expect(result).toMatchObject({ ok: true, extracted: EXTRACTED });
     expect(calls).toHaveLength(1);
     expect(calls[0].model).toBe(GEMINI_MODELS[0]);
     expect(calls[0].key).toBe(KEY_1);
@@ -329,7 +329,7 @@ describe("extractMatchFromScreenshot", () => {
 
     const result = await extractMatchFromScreenshot({ bytes: PNG });
 
-    expect(result).toEqual({ ok: true, extracted: EXTRACTED });
+    expect(result).toMatchObject({ ok: true, extracted: EXTRACTED });
     expect(calls.map((c) => [c.model, c.key])).toEqual([
       [GEMINI_MODELS[0], KEY_1],
       [GEMINI_MODELS[0], KEY_2],
@@ -362,7 +362,7 @@ describe("extractMatchFromScreenshot", () => {
 
     const result = await extractMatchFromScreenshot({ bytes: PNG });
 
-    expect(result).toEqual({ ok: true, extracted: EXTRACTED });
+    expect(result).toMatchObject({ ok: true, extracted: EXTRACTED });
     expect(calls).toHaveLength(6);
     expect(calls[5]).toMatchObject({ model: GEMINI_MODELS[2], key: KEY_2 });
   });
@@ -694,7 +694,7 @@ describe("saveMatchForUser", () => {
     replies = [validReply()];
 
     const result = await extractForMember(rivalry.b.id, rivalry.id, { bytes: PNG });
-    expect(result).toEqual({ ok: true, extracted: EXTRACTED });
+    expect(result).toMatchObject({ ok: true, extracted: EXTRACTED });
     if (!result.ok) return;
 
     const saved = await mustSave(

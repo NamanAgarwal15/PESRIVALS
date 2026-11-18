@@ -4,7 +4,7 @@
 // Rule: if the account has an email, a code sent to that email verifies the
 // change. Accounts with no email yet can add one directly.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { type OtpSender, defaultOtpSender, sendOtp, verifyOtp } from "@/lib/otp";
@@ -109,5 +109,28 @@ export async function setEfootballId(userId: string, raw: string): Promise<Verif
     .update(users)
     .set({ efootballId: parsed.value, updatedAt: new Date() })
     .where(eq(users.id, userId));
+  return { ok: true, value: parsed.value };
+}
+
+/** Display name rule: trimmed, 2 to 50 characters. */
+export function parseDisplayName(raw: string): { ok: true; value: string } | { ok: false; error: string } {
+  const value = raw.replace(/\s+/g, " ").trim();
+  if (value.length < 2) return { ok: false, error: "Name must be at least 2 characters." };
+  if (value.length > 50) return { ok: false, error: "Name must be at most 50 characters." };
+  return { ok: true, value };
+}
+
+export async function setDisplayName(
+  userId: string,
+  raw: string,
+): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
+  const parsed = parseDisplayName(raw);
+  if (!parsed.ok) return parsed;
+  const [row] = await db
+    .update(users)
+    .set({ displayName: parsed.value, updatedAt: new Date() })
+    .where(and(eq(users.id, userId), eq(users.suspended, false)))
+    .returning({ id: users.id });
+  if (!row) return { ok: false, error: "Account not available." };
   return { ok: true, value: parsed.value };
 }
