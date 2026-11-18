@@ -3,7 +3,7 @@
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/email";
 import { eq } from "drizzle-orm";
 import { auth, signIn, signOut, unstable_update } from "@/auth";
 import { db } from "@/db";
@@ -170,22 +170,19 @@ export async function forgotPasswordAction(
 
   const result = await createPasswordResetToken(identifier, async () => "");
   if (result.ok && result.email) {
-    // Send the email only when Resend is configured; never fail loudly.
-    try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      if (process.env.RESEND_API_KEY) {
-        await resend.emails.send({
-          from: process.env.RESET_EMAIL_FROM ?? "PESRIVALS <onboarding@resend.dev>",
-          to: result.email,
-          subject: "Reset your PESRIVALS password",
-          text: `Use this link within 15 minutes to reset your password:\n\n${
-            process.env.NEXT_PUBLIC_SITE_URL ?? "https://pesrivals.vercel.app"
-          }/reset-password?token=${result.token}\n\nIf you did not request this, ignore this email.`,
-        });
-      }
-    } catch {
-      // Delivery failure must not leak whether the account exists.
-    }
+    // Failures are logged server-side by sendEmail and never shown, so the
+    // response cannot reveal whether the account exists.
+    await sendEmail({
+      to: result.email,
+      subject: "Reset your PESRIVALS password",
+      text: `Use this link within 15 minutes to reset your password:
+
+${
+        process.env.NEXT_PUBLIC_SITE_URL?.trim() ?? "https://pesrivals.vercel.app"
+      }/reset-password?token=${result.token}
+
+If you did not request this, ignore this email.`,
+    });
   }
   // Always the same message, whether or not the account exists.
   return { message: FORGOT_CONFIRMATION, values };

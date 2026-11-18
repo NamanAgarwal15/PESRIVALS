@@ -19,10 +19,11 @@ type Side = "left" | "right";
 type Host = "home" | "away";
 
 const ACCEPT = SCREENSHOT_MIME_TYPES.join(",");
-// Hosting platforms cap request bodies well below 8 MB, so big images are
-// re-encoded in the browser before upload. Screenshots are rarely this large.
-const DOWNSCALE_ABOVE_BYTES = 3.5 * 1024 * 1024;
-const DOWNSCALE_MAX_EDGE = 2200;
+// Vercel rejects request bodies over 4.5 MB (before our route runs), so every
+// phone-sized screenshot is re-encoded in the browser: max 1600px, JPEG 0.85.
+const DOWNSCALE_ABOVE_BYTES = 1 * 1024 * 1024;
+const DOWNSCALE_MAX_EDGE = 1600;
+const UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
 
 async function shrinkIfLarge(file: File): Promise<File> {
   if (file.size <= DOWNSCALE_ABOVE_BYTES) return file;
@@ -35,7 +36,7 @@ async function shrinkIfLarge(file: File): Promise<File> {
     canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.9),
+      canvas.toBlob(resolve, "image/jpeg", 0.85),
     );
     if (blob && blob.size < file.size) {
       return new File([blob], "screenshot.jpg", { type: "image/jpeg" });
@@ -89,8 +90,8 @@ export function UploadMatchPanel({
     setAnalyzing(true);
     try {
       const file = await shrinkIfLarge(chosen);
-      if (file.size > SCREENSHOT_MAX_BYTES) {
-        setError("That image is larger than 8 MB. Upload a smaller screenshot.");
+      if (file.size > UPLOAD_LIMIT_BYTES || file.size > SCREENSHOT_MAX_BYTES) {
+        setError("That image is too large (over 4 MB) even after shrinking. Upload a smaller screenshot.");
         return;
       }
       const body = new FormData();
@@ -99,6 +100,10 @@ export function UploadMatchPanel({
         method: "POST",
         body,
       });
+      if (response.status === 413) {
+        setError("That image is too large to upload. Use a smaller screenshot.");
+        return;
+      }
       const result = (await response.json().catch(() => null)) as
         | { ok: true; extracted: ExtractedMatch }
         | { ok: false; error?: string }

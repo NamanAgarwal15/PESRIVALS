@@ -53,13 +53,14 @@ export async function POST(
   // Multipart overhead is small; refuse clearly oversized bodies before reading them.
   const declared = Number(request.headers.get("content-length") ?? 0);
   if (declared > MAX_UPLOAD_BYTES + 64 * 1024) {
-    return fail("That image is larger than 5 MB. Upload a smaller screenshot.", 413);
+    return fail("That image is too large to upload. Use a smaller screenshot.", 413);
   }
 
   let file: FormDataEntryValue | null;
   try {
     file = (await request.formData()).get("screenshot");
-  } catch {
+  } catch (err) {
+    console.error(`[extract] could not parse upload: ${err instanceof Error ? err.name : "unknown"}`);
     return fail("Upload a PNG, JPG or WEBP screenshot.", 400);
   }
   if (!(file instanceof File)) return fail("Choose a screenshot to upload.", 400);
@@ -78,7 +79,10 @@ export async function POST(
     const result = await extractForMember(session.user.id, id, { bytes });
     if (!result.ok) return fail(result.error, STATUS[result.code]);
     return json({ ok: true, extracted: result.extracted }, 200);
-  } catch {
+  } catch (err) {
+    console.error(
+      `[extract] unexpected failure: ${err instanceof Error ? `${err.name}: ${err.message}` : "unknown"}`,
+    );
     // Never leak stack traces or provider details to the client.
     return fail("Could not read that screenshot. Try again.", 503);
   }

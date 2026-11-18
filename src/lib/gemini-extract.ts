@@ -233,7 +233,18 @@ async function callGemini(
     };
   }
 
-  if (!response.ok) return { kind: "retry", why: `HTTP ${response.status}` };
+  if (!response.ok) {
+    // Google's error body names the real cause (bad key, quota, unknown model).
+    // Redacted and truncated defensively so a key can never reach the logs.
+    const detail = await response
+      .json()
+      .then((j: { error?: { status?: string; message?: string } }) =>
+        [j.error?.status, j.error?.message].filter(Boolean).join(": "),
+      )
+      .catch(() => "");
+    const safe = detail.split(apiKey).join("<key>").replace(/s+/g, " ").slice(0, 200);
+    return { kind: "retry", why: `HTTP ${response.status}${safe ? ` ${safe}` : ""}` };
+  }
 
   let payload: unknown;
   try {

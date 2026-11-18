@@ -6,6 +6,7 @@ import { createHash, randomInt } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { otpCodes, users } from "@/db/schema";
+import { sendEmail } from "@/lib/email";
 import { consumeRateLimit, LIMITS } from "@/lib/rate-limit";
 
 export const OTP_MINUTES = 10;
@@ -26,19 +27,15 @@ export type OtpVerifyResult =
 /** Delivery hook, injected so tests never hit a real mail API. */
 export type OtpSender = (otp: string, email: string) => Promise<"email" | "failed">;
 
-/** Default delivery: email through Resend (RESEND_API_KEY). */
-export const defaultOtpSender: OtpSender = async (otp, email) => {
-  if (!process.env.RESEND_API_KEY) return "failed";
-  const { Resend } = await import("resend");
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  const { error } = await resend.emails.send({
-    from: process.env.RESET_EMAIL_FROM ?? "PESRIVALS <onboarding@resend.dev>",
+/** Default delivery: email through Resend (see src/lib/email.ts). */
+export const defaultOtpSender: OtpSender = async (otp, email) =>
+  (await sendEmail({
     to: email,
     subject: "Your PESRIVALS login code",
     text: `Your PESRIVALS code is ${otp}. It expires in ${OTP_MINUTES} minutes. If you did not request it, ignore this email.`,
-  });
-  return error ? "failed" : "email";
-};
+  }))
+    ? "email"
+    : "failed";
 
 /**
  * Creates and emails a 6-digit OTP for the account with this email.
