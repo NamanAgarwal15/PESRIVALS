@@ -84,7 +84,9 @@ Implemented in `src/lib/rivalry-analytics.ts` and `src/lib/career-stats.ts`, ren
 - Records (biggest wins and similar) and host/outcome/margin filters.
 - Career stats across all rivalries (`getCareerStats`) and the aggregated global leaderboard (`src/lib/leaderboard.ts`).
 
-### Tier 1B — Exploratory Rivalry Lab & derived football indices — `Next Polish (Immediate)`
+### Tier 1B — Exploratory Rivalry Lab & derived football indices — `Shipped (Today)` (Phase 3)
+
+Implemented as pure, null-safe functions in `src/lib/rivalry-analytics.ts` (confirmed matches only; zero denominators and legacy null stats give `N/A`, never `NaN`/`Infinity`) and rendered in the Visual Analysis tab by `src/components/dashboard/eda-lab.tsx`. The Shot Clinical Index uses `k = 10`.
 
 **The five derived indices**
 
@@ -173,10 +175,16 @@ Password login (`verifyCredentials`) and OTP sending (`sendOtp`) block suspended
 
 Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` is always `email`; `scripts/setup-live-accounts.mjs` still writes phone numbers; `rivalries.a_public` / `b_public` are unused; `match_status` `pending` and `disputed` and `matches.needs_review` have no flow yet.
 
+### 4.7 Engineering additions (Phases 3–5)
+
+- **Shipped (Phase 3):** leaderboard cached with `unstable_cache` (tag `leaderboard`, 60 s) and expired with `revalidateTag("leaderboard", { expire: 0 })` on match save/dispute/resolve, display-name change, and admin suspend/visibility/match-delete; in-memory SHA-256 screenshot dedup (50 entries, 1 h TTL) so a re-uploaded identical image skips Gemini; rate limiting adds a per-IP upload bucket using `x-vercel-forwarded-for`, then `x-real-ip`, then `x-forwarded-for`.
+- **Phase 4:** 60-second JWT revalidation window to cut per-request DB lookups.
+- **Deployment note:** keep the Vercel function region next to the Neon database. That is a Vercel/Neon dashboard setting, deliberately not hardcoded in `vercel.json` or code.
+
 ## 5. Sequenced implementation roadmap
 
 1. **Phase 1 — Security, privacy & profile polish.** `Shipped (Today)` (commit `7873e69`). Enforce suspension in Google OAuth and JWT sessions; wire peer rivalry privacy against always-visible career profiles, with user search and challenge from the leaderboard; add optional `efootball_id`; drop the dead `users.phone` column.
 2. **Phase 2 — Ingestion trust & abstraction.** `Shipped (Today)`, plus change display name (2–50 characters). Introduce `MatchTelemetryIngestor`; add AI green/yellow confidence flags on extracted fields; add the opponent Dispute (`disputed`) flow.
-3. **Phase 3 — Tier 1B Rivalry EDA Lab & derived indices.** Ship the five derived football indices and the five EDA widgets on the Bento dashboard.
+3. **Phase 3 — Tier 1B Rivalry EDA Lab & derived indices.** `Shipped (Today)`: the five derived football indices and five EDA widgets on the Bento dashboard, plus hardening (below).
 4. **Phase 4 — Match context pills & Stubborn Web Push.** Single screenshot only (no multi-screen, no video). Add 1-tap context pills at save time: Playstyle, Host / Session memory, Extra Time / Penalties, Match Stakes / Vibe. Add **Stubborn Web Push Notifications**: a Service Worker with VAPID keys, persistent alerts using `requireInteraction: true`, and a deliberately multi-step in-app opt-out (several confirmation screens) rather than one-tap disable.
 5. **Phase 5 — Tier 2 & Tier 3 modeling.** Stage 3A Bivariate Poisson and EWMA forecast (N ≥ 5); Stage 3B Glicko-2, tilt detector and clash matrix (N ≥ 20); Tier 2 causal inference (N ≥ 30 tagged matches).

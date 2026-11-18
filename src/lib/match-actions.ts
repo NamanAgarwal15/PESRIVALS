@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { refreshLeaderboard } from "@/lib/leaderboard-cache";
 import { isAdminUser } from "@/lib/admin";
 import {
   type DisputeResult,
@@ -32,6 +33,7 @@ export async function saveExtractedMatch(input: SaveMatchInput): Promise<SaveMat
     const rivalryId = (input as { rivalryId?: unknown } | null)?.rivalryId;
     if (isUuid(rivalryId)) revalidatePath(`/rivalry/${rivalryId}`);
     revalidatePath("/home");
+    refreshLeaderboard();
   }
   return result;
 }
@@ -47,6 +49,7 @@ function refresh(rivalryId: string) {
   revalidatePath(`/rivalry/${rivalryId}`);
   revalidatePath("/home");
   revalidatePath("/leaderboard");
+  refreshLeaderboard();
 }
 
 /** Flags a confirmed match as disputed so it stops counting until resolved. */

@@ -22,6 +22,7 @@ import { createPasswordResetToken, resetPasswordWithToken } from "@/lib/password
 import { sendOtp } from "@/lib/otp";
 import { setDisplayName } from "@/lib/profile";
 import { revalidatePath } from "next/cache";
+import { refreshLeaderboard } from "@/lib/leaderboard-cache";
 
 const text = (formData: FormData, name: string) => {
   const value = formData.get(name);
@@ -295,6 +296,7 @@ export async function updateDisplayNameAction(
   if (result.ok) {
     revalidatePath("/home");
     revalidatePath("/leaderboard");
+    refreshLeaderboard();
     revalidatePath("/player/[username]", "page");
   }
   return result;

@@ -96,6 +96,7 @@ export function toAnalyticsMatch(row: RawMatch, currentUserId: string, iAmA: boo
     opponentGoals: iAmA ? row.userBGoals : row.userAGoals,
     decidedOnPens: row.decidedOnPens,
     needsReview: row.needsReview,
+    status: row.status,
     my,
     opp,
   };

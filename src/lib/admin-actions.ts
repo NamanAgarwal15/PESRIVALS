@@ -14,6 +14,7 @@ import {
   setTempPasswordHash,
 } from "@/lib/admin";
 import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
+import { refreshLeaderboard } from "@/lib/leaderboard-cache";
 import { isUuid } from "@/lib/rivalry-helpers";
 
 /** RBAC gate: re-checks the role in the DB on every action. Non-admins get a 404. */
@@ -44,6 +45,7 @@ export async function adminToggleSuspendAction(fd: FormData): Promise<void> {
   if (!isUuid(userId) || userId === me) return; // never suspend yourself
   await setSuspended(userId, field(fd, "suspended") === "true");
   revalidatePath("/admin");
+  refreshLeaderboard();
 }
 
 export async function adminToggleLeaderboardAction(fd: FormData): Promise<void> {
@@ -52,6 +54,7 @@ export async function adminToggleLeaderboardAction(fd: FormData): Promise<void> 
   if (!isUuid(userId)) return;
   await setLeaderboardVisibility(userId, field(fd, "visible") === "true");
   revalidatePath("/admin");
+  refreshLeaderboard();
 }
 
 export async function adminSetRoleAction(fd: FormData): Promise<void> {
@@ -68,6 +71,7 @@ export async function adminDeleteMatchAction(fd: FormData): Promise<void> {
   if (!isUuid(matchId)) return;
   await deleteMatch(matchId);
   revalidatePath("/admin");
+  refreshLeaderboard();
 }
 
 export async function adminSetAnnouncementAction(fd: FormData): Promise<void> {

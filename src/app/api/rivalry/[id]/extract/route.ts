@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import type { IngestFailureCode } from "@/lib/ingestors/types";
 import { detectImageType } from "@/lib/image-bytes";
 import { extractForMember } from "@/lib/match-helpers";
-import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
+import { LIMITS, clientIpFromHeaders, consumeRateLimit } from "@/lib/rate-limit";
 
 // 5 MB upload cap, enforced on the actual bytes (not just the declaration).
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -49,6 +49,17 @@ export async function POST(
   );
   if (!rl.ok) {
     return fail("Too many uploads. Try again in about an hour.", 429);
+  }
+
+  // Second bucket per client IP (trusted edge header first) against one IP using many accounts.
+  const ip = clientIpFromHeaders(request.headers);
+  if (ip) {
+    const ipRl = await consumeRateLimit(
+      `extract-ip:${ip}`,
+      LIMITS.matchExtractIp.max,
+      LIMITS.matchExtractIp.windowMinutes,
+    );
+    if (!ipRl.ok) return fail("Too many uploads from this network. Try again later.", 429);
   }
 
   // Multipart overhead is small; refuse clearly oversized bodies before reading them.

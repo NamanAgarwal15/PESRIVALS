@@ -8,7 +8,7 @@ import { IncomingRequestsSection, SentRequestsSection } from "@/components/rival
 import { getRelationMap, getUserRivalries } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
-import { getLeaderboard } from "@/lib/leaderboard";
+import { getCachedLeaderboard } from "@/lib/leaderboard-cache";
 import { searchPlayers } from "@/lib/player-profile";
 
 export const metadata: Metadata = { title: "Leaderboard | PESRIVALS" };
@@ -39,7 +39,7 @@ async function LeaderboardContent({
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
   const found = q.trim().length >= 2 ? await searchPlayers(q) : [];
-  const [rows, session] = await Promise.all([getLeaderboard(), getSession()]);
+  const [rows, session] = await Promise.all([getCachedLeaderboard(), getSession()]);
   const me = session?.user?.id;
   const relations = me ? await getRelationMap(me) : {};
   const requests = me ? await getUserRivalries(me) : null;

@@ -20,6 +20,8 @@ export type AnalyticsMatch = {
   opponentGoals: number;
   decidedOnPens: boolean;
   needsReview: boolean;
+  /** Absent on legacy callers; anything other than "confirmed" is ignored by Tier 1B. */
+  status?: "confirmed" | "pending" | "disputed";
   my: StatSides;
   opp: StatSides;
 };
@@ -389,5 +391,348 @@ export function computeRivalryAnalytics(
     comparison: computeStatComparison(filtered),
     series: buildTrendSeries(filtered),
     records: computeRecords(filtered),
+    derived: computeDerivedIndices(filtered),
+    eda: computeEdaLab(filtered),
+  };
+}
+
+// ===========================================================================
+// Tier 1B: derived indices + Rivalry EDA Lab. Pure and null-safe: a missing
+// stat or a zero denominator yields null, never NaN or Infinity.
+// ===========================================================================
+
+/** Only confirmed matches count; a match with no status (legacy callers) does. */
+export function onlyConfirmed(matches: AnalyticsMatch[]): AnalyticsMatch[] {
+  return matches.filter((m) => m.status === undefined || m.status === "confirmed");
+}
+
+const finite = (v: number): number | null => (Number.isFinite(v) ? v : null);
+const ratio = (num: number, den: number): number | null => (den > 0 ? finite(num / den) : null);
+
+export const CLINICAL_K = 10;
+
+export type PlayerIndices = {
+  /** Shrunk goals / shots on target, as a percent. */
+  shotClinical: number | null;
+  /** Passes per minute of possession (90-minute match). */
+  buildUpTempo: number | null;
+  /** Crosses as a percent of passes; null when crosses were never recorded. */
+  directness: number | null;
+  /** Opponent passes per defensive action (lower = harder press). */
+  pressing: number | null;
+  /** Saves as a percent of opponent shots on target. */
+  saveEfficiency: number | null;
+};
+
+export type DerivedIndices = { mine: PlayerIndices; theirs: PlayerIndices; clinicalPrior: number | null };
+
+function indicesFor(ms: AnalyticsMatch[], side: "my" | "opp", prior: number | null): PlayerIndices {
+  const other = side === "my" ? "opp" : "my";
+  const goalsOf = (m: AnalyticsMatch) => (side === "my" ? m.myGoals : m.opponentGoals);
+
+  let goals = 0;
+  let sot = 0;
+  let tempoSum = 0;
+  let tempoN = 0;
+  let crosses = 0;
+  let crossPasses = 0;
+  let oppPasses = 0;
+  let defActions = 0;
+  let saves = 0;
+  let faced = 0;
+
+  for (const m of ms) {
+    const s = m[side];
+    const o = m[other];
+    if (s.shots_on_target !== null) {
+      sot += s.shots_on_target;
+      goals += goalsOf(m);
+    }
+    if (s.passes !== null && s.possession !== null && s.possession > 0) {
+      const t = s.passes / (90 * (s.possession / 100));
+      if (Number.isFinite(t)) {
+        tempoSum += t;
+        tempoN++;
+      }
+    }
+    if (s.crosses !== null && s.passes !== null) {
+      crosses += s.crosses;
+      crossPasses += s.passes;
+    }
+    if (o.passes !== null && s.tackles !== null) {
+      const def = s.tackles + (s.interceptions ?? 0) + (s.fouls ?? 0);
+      if (def > 0) {
+        oppPasses += o.passes;
+        defActions += def;
+      }
+    }
+    if (s.saves !== null && o.shots_on_target !== null) {
+      saves += s.saves;
+      faced += o.shots_on_target;
+    }
+  }
+
+  const clinical =
+    prior === null ? null : finite(((goals + CLINICAL_K * prior) / (sot + CLINICAL_K)) * 100);
+  const direct = ratio(crosses, crossPasses);
+  const save = ratio(saves, faced);
+  return {
+    shotClinical: clinical,
+    buildUpTempo: tempoN ? finite(tempoSum / tempoN) : null,
+    directness: direct === null ? null : direct * 100,
+    pressing: ratio(oppPasses, defActions),
+    saveEfficiency: save === null ? null : save * 100,
+  };
+}
+
+export function computeDerivedIndices(matches: AnalyticsMatch[]): DerivedIndices {
+  const ms = onlyConfirmed(matches);
+  // Rivalry-wide mean conversion of shots on target, both players pooled.
+  let goals = 0;
+  let sot = 0;
+  for (const m of ms) {
+    if (m.my.shots_on_target !== null) {
+      sot += m.my.shots_on_target;
+      goals += m.myGoals;
+    }
+    if (m.opp.shots_on_target !== null) {
+      sot += m.opp.shots_on_target;
+      goals += m.opponentGoals;
+    }
+  }
+  const prior = ratio(goals, sot);
+  return { mine: indicesFor(ms, "my", prior), theirs: indicesFor(ms, "opp", prior), clinicalPrior: prior };
+}
+
+// --- EDA LAB ---
+
+export type Record3 = { played: number; wins: number; draws: number; losses: number; winPct: number | null };
+
+function record(ms: AnalyticsMatch[]): Record3 {
+  let wins = 0;
+  let draws = 0;
+  let losses = 0;
+  for (const m of ms) {
+    const o = outcomeOf(m);
+    if (o === "win") wins++;
+    else if (o === "draw") draws++;
+    else losses++;
+  }
+  const played = ms.length;
+  const p = ratio(wins, played);
+  return { played, wins, draws, losses, winPct: p === null ? null : p * 100 };
+}
+
+export type ClutchProfile = {
+  oneGoal: Record3;
+  blowoutWins: number;
+  blowoutLosses: number;
+  avgWinMargin: { mine: number | null; theirs: number | null };
+};
+
+export function computeClutchProfile(matches: AnalyticsMatch[]): ClutchProfile {
+  const ms = onlyConfirmed(matches);
+  const diff = (m: AnalyticsMatch) => m.myGoals - m.opponentGoals;
+  const wonBy = (sign: 1 | -1) => ms.filter((m) => diff(m) * sign > 0 && outcomeOf(m) !== "draw");
+  const avg = (xs: AnalyticsMatch[]) => (xs.length ? xs.reduce((s, m) => s + Math.abs(diff(m)), 0) / xs.length : null);
+  return {
+    oneGoal: record(ms.filter((m) => Math.abs(diff(m)) === 1)),
+    blowoutWins: ms.filter((m) => diff(m) >= 4 && outcomeOf(m) === "win").length,
+    blowoutLosses: ms.filter((m) => diff(m) <= -4 && outcomeOf(m) === "loss").length,
+    avgWinMargin: { mine: avg(wonBy(1)), theirs: avg(wonBy(-1)) },
+  };
+}
+
+export const EDA_STATS = [
+  "possession",
+  "shots",
+  "shots_on_target",
+  "passes",
+  "pass_accuracy",
+  "tackles",
+  "corners",
+] as const;
+export type EdaStat = (typeof EDA_STATS)[number];
+export const EDA_STAT_LABELS: Record<EdaStat, string> = {
+  possession: "Possession",
+  shots: "Shots",
+  shots_on_target: "Shots on Target",
+  passes: "Passes",
+  pass_accuracy: "Pass Accuracy",
+  tackles: "Tackles",
+  corners: "Corners",
+};
+
+function statValue(s: StatSides, stat: EdaStat): number | null {
+  if (stat === "pass_accuracy") {
+    return s.passes !== null && s.passes > 0 && s.successful_passes !== null
+      ? (s.successful_passes / s.passes) * 100
+      : null;
+  }
+  return s[stat];
+}
+
+export type LeadingRow = {
+  stat: EdaStat;
+  label: string;
+  mine: { n: number; wins: number; winPct: number | null };
+  theirs: { n: number; wins: number; winPct: number | null };
+};
+
+/** Win rate of each player in matches where they led the given stat (strictly). */
+export function computeLeadingWinPct(matches: AnalyticsMatch[]): LeadingRow[] {
+  const ms = onlyConfirmed(matches);
+  return EDA_STATS.map((stat) => {
+    const acc = { mine: { n: 0, wins: 0 }, theirs: { n: 0, wins: 0 } };
+    for (const m of ms) {
+      const a = statValue(m.my, stat);
+      const b = statValue(m.opp, stat);
+      if (a === null || b === null || a === b) continue;
+      const o = outcomeOf(m);
+      if (a > b) {
+        acc.mine.n++;
+        if (o === "win") acc.mine.wins++;
+      } else {
+        acc.theirs.n++;
+        if (o === "loss") acc.theirs.wins++;
+      }
+    }
+    const fin = (x: { n: number; wins: number }) => {
+      const p = ratio(x.wins, x.n);
+      return { ...x, winPct: p === null ? null : p * 100 };
+    };
+    return { stat, label: EDA_STAT_LABELS[stat], mine: fin(acc.mine), theirs: fin(acc.theirs) };
+  });
+}
+
+/** Pearson r; null for fewer than 3 pairs or zero variance. Never NaN. */
+export function pearson(xs: number[], ys: number[]): number | null {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 3) return null;
+  const mx = xs.slice(0, n).reduce((s, v) => s + v, 0) / n;
+  const my = ys.slice(0, n).reduce((s, v) => s + v, 0) / n;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx;
+    const dy = ys[i] - my;
+    sxy += dx * dy;
+    sxx += dx * dx;
+    syy += dy * dy;
+  }
+  if (sxx === 0 || syy === 0) return null;
+  const r = sxy / Math.sqrt(sxx * syy);
+  return Number.isFinite(r) ? Math.max(-1, Math.min(1, r)) : null;
+}
+
+export type CorrelationLabel = "Strong +" | "Moderate +" | "Weak" | "Moderate −" | "Strong −" | "N/A";
+
+export function correlationLabel(r: number | null): CorrelationLabel {
+  if (r === null) return "N/A";
+  if (r >= 0.6) return "Strong +";
+  if (r >= 0.3) return "Moderate +";
+  if (r <= -0.6) return "Strong −";
+  if (r <= -0.3) return "Moderate −";
+  return "Weak";
+}
+
+export type CorrelationRow = { stat: EdaStat; label: string; n: number; r: number | null; strength: CorrelationLabel };
+
+/** Correlation between each stat edge (me − opponent) and goal difference. */
+export function computeStatCorrelations(matches: AnalyticsMatch[]): CorrelationRow[] {
+  const ms = onlyConfirmed(matches);
+  return EDA_STATS.map((stat) => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const m of ms) {
+      const a = statValue(m.my, stat);
+      const b = statValue(m.opp, stat);
+      if (a === null || b === null) continue;
+      xs.push(a - b);
+      ys.push(m.myGoals - m.opponentGoals);
+    }
+    const r = pearson(xs, ys);
+    return { stat, label: EDA_STAT_LABELS[stat], n: xs.length, r, strength: correlationLabel(r) };
+  });
+}
+
+export type SessionRow = {
+  date: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalsPerMatch: number | null;
+};
+
+/** One row per calendar date (YYYY-MM-DD), newest first. Undated matches are skipped. */
+export function computeSessions(matches: AnalyticsMatch[]): SessionRow[] {
+  const byDate = new Map<string, AnalyticsMatch[]>();
+  for (const m of onlyConfirmed(matches)) {
+    if (!m.playedAt) continue;
+    const d = m.playedAt.slice(0, 10);
+    byDate.set(d, [...(byDate.get(d) ?? []), m]);
+  }
+  return [...byDate.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([date, ms]) => {
+      const r = record(ms);
+      const gf = ms.reduce((s, m) => s + m.myGoals, 0);
+      const ga = ms.reduce((s, m) => s + m.opponentGoals, 0);
+      return {
+        date,
+        played: r.played,
+        wins: r.wins,
+        draws: r.draws,
+        losses: r.losses,
+        goalsFor: gf,
+        goalsAgainst: ga,
+        goalsPerMatch: ratio(gf + ga, r.played),
+      };
+    });
+}
+
+export type ScorelineStats = {
+  common: { score: string; count: number }[];
+  margins: { label: "1 goal" | "2 goals" | "3 goals" | "4+ goals"; count: number; mine: number; theirs: number }[];
+};
+
+export function computeScorelines(matches: AnalyticsMatch[], top = 5): ScorelineStats {
+  const ms = onlyConfirmed(matches);
+  const counts = new Map<string, number>();
+  const margins: ScorelineStats["margins"] = [
+    { label: "1 goal", count: 0, mine: 0, theirs: 0 },
+    { label: "2 goals", count: 0, mine: 0, theirs: 0 },
+    { label: "3 goals", count: 0, mine: 0, theirs: 0 },
+    { label: "4+ goals", count: 0, mine: 0, theirs: 0 },
+  ];
+  for (const m of ms) {
+    const key = `${m.myGoals}–${m.opponentGoals}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const d = m.myGoals - m.opponentGoals;
+    const o = outcomeOf(m);
+    if (d === 0 || o === "draw") continue; // penalty-decided matches are draws
+    const bucket = margins[Math.min(Math.abs(d), 4) - 1];
+    bucket.count++;
+    if (d > 0) bucket.mine++;
+    else bucket.theirs++;
+  }
+  const common = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, top)
+    .map(([score, count]) => ({ score, count }));
+  return { common, margins };
+}
+
+export function computeEdaLab(matches: AnalyticsMatch[]) {
+  return {
+    clutch: computeClutchProfile(matches),
+    leading: computeLeadingWinPct(matches),
+    correlations: computeStatCorrelations(matches),
+    sessions: computeSessions(matches),
+    scorelines: computeScorelines(matches),
   };
 }
