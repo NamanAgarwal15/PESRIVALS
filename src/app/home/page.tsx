@@ -8,8 +8,10 @@ import {
   IncomingRequestsSection,
   SentRequestsSection,
 } from "@/components/rivalries/rivalry-sections";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { logoutAction } from "@/lib/auth-actions";
+import { logoutAction, linkGoogleAction } from "@/lib/auth-actions";
+import { getAccountSecurity, isGoogleEnabled } from "@/lib/auth-helpers";
 import { getUserRivalries } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
 
@@ -38,6 +40,7 @@ async function HomeContent() {
   const { activeRivalries, incomingRequests, sentRequests } = await getUserRivalries(
     session.user.id,
   );
+  const security = await getAccountSecurity(session.user.id);
 
   return (
     <>
@@ -51,6 +54,46 @@ async function HomeContent() {
           </Button>
         </form>
       </header>
+
+      {security ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Account Security &amp; Google Link</CardTitle>
+            <CardDescription>
+              Recovery channels for your account. Link Google so you can always get back in.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col gap-1 text-sm">
+              <span>
+                <span className="text-muted-foreground">Email: </span>
+                <span className="font-medium">{security.email ?? "not set"}</span>
+              </span>
+              <span>
+                <span className="text-muted-foreground">Phone: </span>
+                <span className="font-medium">{security.phone ?? "not set"}</span>
+              </span>
+              <span>
+                <span className="text-muted-foreground">Google: </span>
+                <span className={security.googleLinked ? "font-medium text-win" : "font-medium"}>
+                  {security.googleLinked ? "linked" : "not linked"}
+                </span>
+              </span>
+            </div>
+            {security.googleLinked ? null : isGoogleEnabled() ? (
+              <form action={linkGoogleAction}>
+                <Button type="submit" size="lg" className="h-10 px-4">
+                  Link Google Account
+                </Button>
+              </form>
+            ) : (
+              <p className="max-w-xs text-xs text-muted-foreground">
+                Google sign-in is not configured on this deployment, so linking is unavailable.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
       <Link
         href="/stats"
         className="flex items-center justify-between gap-3 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/10 transition-colors hover:bg-secondary"

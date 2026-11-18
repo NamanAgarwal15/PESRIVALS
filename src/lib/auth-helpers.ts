@@ -22,7 +22,7 @@ export const THROTTLE_LOCK_MINUTES = 15;
 
 const DEFAULT_PHONE_COUNTRY = "IN";
 const MAX_IDENTIFIER_LENGTH = 254;
-const MAX_PASSWORD_LENGTH = 72;
+const MAX_PASSWORD_LENGTH = 128;
 
 // Hash of a random throwaway string. Compared against when the user is
 // unknown or has no password, so those paths cost the same as a real check.
@@ -127,8 +127,10 @@ export const signUpSchema = z.object({
   password: z
     .string({ error: "Enter a password" })
     .min(8, "Password must be at least 8 characters")
-    .max(MAX_PASSWORD_LENGTH, "Password can be at most 72 characters")
-    // bcrypt only reads the first 72 bytes, which can be fewer than 72 characters.
+    .max(MAX_PASSWORD_LENGTH, `Password can be at most ${MAX_PASSWORD_LENGTH} characters`)
+    .refine((v) => /[a-zA-Z]/.test(v) && /[0-9]/.test(v), {
+      message: "Password must include at least one letter and one number",
+    })
     .refine(
       (v) => Buffer.byteLength(v, "utf8") <= MAX_PASSWORD_LENGTH,
       "Password is too long",
@@ -157,7 +159,51 @@ export const signUpSchema = z.object({
       })
       .nullable(),
   ),
+}).superRefine((data, ctx) => {
+  // New signups need at least one recovery channel. Existing live users
+  // (signed up before this rule) are unaffected: this only runs on signup.
+  if (!data.email && !data.phone) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["form"],
+      message:
+        "Please enter either an email address or a phone number for account recovery.",
+    });
+  }
 });
+
+/** Standalone password policy, reused by the reset-password flow. */
+export const passwordSchema = z
+  .string({ error: "Enter a password" })
+  .min(8, "Password must be at least 8 characters")
+  .max(128, "Password can be at most 128 characters")
+  .refine((v) => /[a-zA-Z]/.test(v) && /[0-9]/.test(v), {
+    message: "Password must include at least one letter and one number",
+  });
+
+// ---------------------------------------------------------------------------
+// Account security overview (used by the /home card)
+// ---------------------------------------------------------------------------
+
+export type AccountSecurity = {
+  email: string | null;
+  phone: string | null;
+  googleLinked: boolean;
+};
+
+/** Recovery channels + Google link status for the logged-in user. */
+export async function getAccountSecurity(userId: string): Promise<AccountSecurity | null> {
+  const [row] = await db
+    .select({ email: users.email, phone: users.phone })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!row) return null;
+  const [link] = await db
+    .select({ id: oauthAccounts.id })
+    .from(oauthAccounts)
+    .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")));
+  return { email: row.email, phone: row.phone, googleLinked: Boolean(link) };
+}
 
 export type FieldErrors = Partial<Record<string, string>>;
 

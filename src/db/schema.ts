@@ -94,6 +94,34 @@ export const loginThrottle = pgTable("login_throttle", {
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
 });
 
+// Generic DB-backed rate limiter, keyed like "signup:ip:1.2.3.4".
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// Single-use password reset tokens. Only the SHA-256 hash of the token is
+// stored; the raw token exists solely in the reset link sent to the user.
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("password_reset_tokens_hash_idx").on(t.tokenHash)],
+);
+
 // A pair of users can have only one rivalry. The lower uuid is ALWAYS user_a
 // (enforced by rivalries_user_order), so (user_a_id, user_b_id) is canonical.
 export const rivalries = pgTable(

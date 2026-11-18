@@ -17,7 +17,7 @@ import {
 } from "@/lib/auth-helpers";
 
 const RUN = `t${randomBytes(3).toString("hex")}`; // e.g. "t3fa91c"
-const PASSWORD = "correct-horse-battery";
+const PASSWORD = "correct-horse-battery-1";
 
 const createdUserIds = new Set<string>();
 const throttleKeys = new Set<string>();
@@ -28,9 +28,13 @@ const email = (label: string) => `${RUN}.${label}${counter++}@example.com`;
 const indianMobile = () => `98${randomInt(0, 100_000_000).toString().padStart(8, "0")}`;
 
 async function signUp(input: Partial<SignUpInput> & { username: string }) {
+  // Since the email-or-phone rule, signups without an explicit recovery
+  // channel get a default email so older tests keep exercising the happy path.
+  const hasChannel = input.email !== undefined || input.phone !== undefined;
   const result = await signUpUser({
     displayName: "Test Player",
     password: PASSWORD,
+    ...(hasChannel ? {} : { email: email("auto") }),
     ...input,
   });
   if (result.ok) createdUserIds.add(result.user.id);
@@ -83,7 +87,7 @@ afterAll(async () => {
 });
 
 describe("sign-up", () => {
-  it("creates a user from a username only, trimmed and lowercased", async () => {
+  it("creates a user from a username only (recovery channel auto-filled by the helper), trimmed and lowercased", async () => {
     const name = uname("plain");
     const user = await mustSignUp({
       username: `  ${name.toUpperCase()}  `,
@@ -95,17 +99,25 @@ describe("sign-up", () => {
     expect(user.onboarded).toBe(true);
 
     const row = await userRow(user.id);
-    expect(row.email).toBeNull();
+    expect(row.email).not.toBeNull();
     expect(row.phone).toBeNull();
     expect(row.isPlaceholder).toBe(false);
     expect(row.passwordHash).toMatch(/^\$2[aby]\$12\$/);
     expect(row.passwordHash).not.toContain(PASSWORD);
   });
 
-  it("stores blank email and phone as null", async () => {
-    const user = await mustSignUp({ username: uname("blank"), email: "   ", phone: "" });
+  it("requires an email or phone for account recovery", async () => {
+    const blank = await signUp({ username: uname("blank"), email: "   ", phone: "" });
+    expect(blank.ok).toBe(false);
+    if (blank.ok) return;
+    expect(blank.errors.form).toBe(
+      "Please enter either an email address or a phone number for account recovery.",
+    );
+
+    // Blank phone is still stored as null when an email is present.
+    const user = await mustSignUp({ username: uname("blank2"), email: email("b2"), phone: "" });
     const row = await userRow(user.id);
-    expect(row.email).toBeNull();
+    expect(row.email).not.toBeNull();
     expect(row.phone).toBeNull();
   });
 

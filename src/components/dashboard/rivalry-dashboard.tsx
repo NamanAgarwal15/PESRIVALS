@@ -369,11 +369,11 @@ function OverviewTab({
           </CardHeader>
           <CardContent className="flex flex-col gap-4 p-3.5 md:p-6">
             <p className="text-center font-heading text-3xl font-bold tabular-nums">
-              <span className="text-win">{summary.wins}</span>
-              <span className="mx-2 text-muted-foreground">W – D – L</span>
-              <span className="mx-2 tabular-nums text-draw">{summary.draws}</span>
-              <span className="mx-2 text-muted-foreground">–</span>
-              <span className="text-loss">{summary.losses}</span>
+              <span className="text-win">{summary.wins}W</span>{" "}
+              <span className="text-muted-foreground">–</span>{" "}
+              <span className="text-draw">{summary.draws}D</span>{" "}
+              <span className="text-muted-foreground">–</span>{" "}
+              <span className="text-loss">{summary.losses}L</span>
             </p>
             <p className="text-center text-sm text-muted-foreground">
               {meName} <span className="mx-1 text-muted-foreground">vs</span> {oppName} ·{" "}

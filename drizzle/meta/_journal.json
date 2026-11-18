@@ -15,6 +15,13 @@
       "when": 1794811870539,
       "tag": "0001_cool_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794943898532,
+      "tag": "0002_melted_emma_frost",
+      "breakpoints": true
     }
   ]
 }

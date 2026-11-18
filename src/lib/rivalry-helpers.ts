@@ -7,6 +7,7 @@ import { and, asc, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { rivalries, users } from "@/db/schema";
+import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -150,6 +151,10 @@ export async function sendRivalryRequest(
   const me = currentUserId.toLowerCase();
   const target = targetUserId.toLowerCase();
   if (me === target) return fail("You cannot challenge yourself");
+
+  // Rate limit: max 20 invites per hour per user.
+  const rl = await consumeRateLimit(`invite:${me}`, LIMITS.rivalryInvite.max, LIMITS.rivalryInvite.windowMinutes);
+  if (!rl.ok) return fail("Too many challenges sent. Try again in about an hour.");
 
   const people = await db
     .select({

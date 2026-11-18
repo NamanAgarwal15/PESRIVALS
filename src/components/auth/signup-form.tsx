@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
+import { CountryCodeSelect } from "./country-code-select";
 import { type SignUpState, signUpAction } from "@/lib/auth-actions";
 import { Field, FormError } from "./form-parts";
 
@@ -44,28 +45,34 @@ export function SignupForm() {
         type="password"
         autoComplete="new-password"
         minLength={8}
-        maxLength={72}
-        hint="At least 8 characters."
+        maxLength={128}
+        hint="At least 8 characters, with a letter and a number."
         error={errors.password}
         required
       />
       <Field
-        label="Email (optional)"
+        label="Email (for account recovery)"
         name="email"
         type="email"
         autoComplete="email"
+        hint="Email or phone is required so you can recover your account."
         error={errors.email}
         defaultValue={values?.email ?? ""}
       />
-      <Field
-        label="Phone (optional)"
-        name="phone"
-        type="tel"
-        autoComplete="tel"
-        hint="Indian numbers work without +91. Add the country code for others."
-        error={errors.phone}
-        defaultValue={values?.phone ?? ""}
-      />
+      <div className="flex gap-2">
+        <CountryCodeSelect />
+        <div className="flex-1">
+          <Field
+            label="Phone (for account recovery)"
+            name="phone"
+            type="tel"
+            autoComplete="tel-national"
+            hint="Indian numbers work without +91. Pick a code for others."
+            error={errors.phone}
+            defaultValue={values?.phone ?? ""}
+          />
+        </div>
+      </div>
       <Button
         type="submit"
         size="lg"
