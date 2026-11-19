@@ -64,18 +64,20 @@ export function MatchLab({ matches, meName, oppName }: { matches: AnalyticsMatch
                 <div className="flex items-center justify-center bg-draw/70" style={{ width: `${f.draw * 100}%` }}>{f.draw >= 0.08 ? pct(f.draw) : ""}</div>
                 <div className="flex items-center justify-center bg-loss/70" style={{ width: `${f.loss * 100}%` }}>{pct(f.loss)}</div>
               </div>
-              <p className="text-xs text-muted-foreground">{meName} win · draw · {oppName} win. Expected goals {f.lambdaMe.toFixed(2)} – {f.lambdaOpp.toFixed(2)}. Most likely score {f.likely.me}–{f.likely.opp} ({pct(f.likely.p)}).</p>
+              <p className="text-xs text-muted-foreground">{meName} win · draw · {oppName} win. Expected goals {f.lambdaMe.toFixed(2)} – {f.lambdaOpp.toFixed(2)}. Most likely exact score {f.likely.me}–{f.likely.opp} ({(f.likely.p * 100).toFixed(1)}%). “6+” pools every score of 6 or more goals for that side.</p>
+              <p className="text-sm">In plain English: {meName} has about a {pct(f.win)} chance to win the next match, {pct(f.draw)} to draw and {pct(f.loss)} to lose to {oppName}. This is built from how many goals each of you has scored lately (recent matches count more). It is a guide, not a promise.</p>
               <div className="overflow-x-auto">
                 <table className="text-center text-xs tabular-nums" aria-label="Exact score probabilities">
                   <thead>
-                    <tr><th className="p-1 text-muted-foreground">{meName} \ {oppName}</th>{[0, 1, 2, 3, "4+"].map((y) => <th key={y} className="p-1">{y}</th>)}</tr>
+                    <tr><th className="p-1 text-muted-foreground">{meName} \ {oppName}</th>{[0, 1, 2, 3, 4, 5, "6+"].map((y) => <th key={y} className="p-1">{y}</th>)}</tr>
                   </thead>
                   <tbody>
                     {f.grid.map((row, x) => (
                       <tr key={x}>
-                        <th className="p-1">{x === 4 ? "4+" : x}</th>
+                        <th className="p-1">{x === 6 ? "6+" : x}</th>
                         {row.map((p, y) => {
-                          const best = x === f.likely.me && y === f.likely.opp;
+                          // Only an exact (unpooled) cell is ever highlighted; the 6+ pool is not a scoreline.
+                          const best = x < 6 && y < 6 && x === f.likely.me && y === f.likely.opp;
                           return (
                             <td key={y} className={`min-w-11 rounded p-1 ${best ? "ring-2 ring-primary font-bold" : ""}`} style={{ backgroundColor: `color-mix(in oklab, var(--primary) ${Math.round(p * 400)}%, transparent)` }}>
                               {(p * 100).toFixed(1)}
@@ -101,6 +103,14 @@ export function MatchLab({ matches, meName, oppName }: { matches: AnalyticsMatch
                 <b>Glicko-2:</b> {meName} {deep.ratings.me.rating.toFixed(0)} ± {(deep.ratings.me.rd * 2).toFixed(0)} · {oppName} {deep.ratings.opp.rating.toFixed(0)} ± {(deep.ratings.opp.rd * 2).toFixed(0)}
                 <span className="text-muted-foreground"> (volatility {deep.ratings.me.vol.toFixed(3)} / {deep.ratings.opp.vol.toFixed(3)})</span>
               </p>
+              <p className="text-sm">In plain English: {(() => {
+                const d = deep.ratings.me.rating - deep.ratings.opp.rating;
+                const p = 1 / (1 + Math.pow(10, -d / 400));
+                return Math.abs(d) < 10
+                  ? `You and ${oppName} are rated almost the same (a 1500 rating is average).`
+                  : `${d > 0 ? meName : oppName} is rated ${Math.abs(d).toFixed(0)} points higher, which means roughly a ${pct(d > 0 ? p : 1 - p)} chance to win any single game. The ± number is how unsure the rating still is: it shrinks as you play more.`;
+              })()}</p>
+              <p className="text-xs text-muted-foreground">Tilt = losing two or more in a row in one sitting, then playing worse for the rest of that sitting.</p>
               {(["me", "opp"] as const).map((k) => {
                 const t = deep.tilt[k];
                 return (
@@ -138,7 +148,14 @@ export function MatchLab({ matches, meName, oppName }: { matches: AnalyticsMatch
             <>
               <Effect title="Effect of you hosting" r={lab.causal.host} />
               {lab.causal.playstyle ? <Effect title={`Effect of playing “${lab.causal.playstyle.style}”`} r={lab.causal.playstyle.result} /> : null}
-              <p className="text-xs text-muted-foreground">Inverse-probability weighted estimates with a 200-sample bootstrap. These are estimates with uncertainty, not guarantees.</p>
+              <p className="text-sm">In plain English: {(() => {
+                const h = lab.causal.host;
+                if (!h) return "There is not enough variety in who hosted yet to say whether hosting helps.";
+                const pts = h.ate * 100;
+                const clear = h.lo > 0 || h.hi < 0;
+                return `When you host, your chance of winning looks about ${Math.abs(pts).toFixed(0)} points ${pts >= 0 ? "higher" : "lower"}, after accounting for your playstyle. ${clear ? "The range is clearly one-sided, so this is a real signal." : "But the range includes zero, so it could just be chance."}`;
+              })()}</p>
+              <p className="text-xs text-muted-foreground">Estimates with a 200-sample bootstrap range. They show what the data suggests, not guarantees.</p>
             </>
           )}
         </section>

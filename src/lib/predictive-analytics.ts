@@ -25,7 +25,11 @@ export function ewma(values: number[], alpha = EWMA_ALPHA): number {
 // Stage 3A: EWMA rates + bivariate Poisson
 // ---------------------------------------------------------------------------
 
-const GRID_MAX = 12; // exact pmf is computed to 12 goals each side, then normalised
+// The exact pmf is computed for 0..15 goals each side and normalised. The display
+// grid pools only 6 or more goals (index 6); the "most likely score" is taken from
+// the UNPOOLED table so a pooled cell is never mistaken for a real scoreline.
+const GRID_MAX = 15;
+export const GRID_SIZE = 7; // 0..5 and "6+"
 
 function factorial(n: number): number {
   let f = 1;
@@ -47,11 +51,14 @@ export function bivariatePoissonPmf(x: number, y: number, l1: number, l2: number
 }
 
 export type ScoreGrid = {
-  /** grid[me][opp], index 4 means "4 or more". Sums to 1. */
+  /** Display grid[me][opp], 7x7: 0..5 goals and index 6 = "6 or more". Sums to 1. */
   grid: number[][];
+  /** Exact unpooled probabilities for 0..15 goals each side. */
+  exact: number[][];
   win: number;
   draw: number;
   loss: number;
+  /** The single most likely EXACT scoreline (never a pooled bucket). */
   likely: { me: number; opp: number; p: number };
 };
 
@@ -73,19 +80,22 @@ export function scoreGrid(lambdaMe: number, lambdaOpp: number, lambda3: number):
   let win = 0;
   let draw = 0;
   let loss = 0;
-  const grid = Array.from({ length: 5 }, () => Array<number>(5).fill(0));
+  const grid = Array.from({ length: GRID_SIZE }, () => Array<number>(GRID_SIZE).fill(0));
+  const exact: number[][] = [];
+  let likely = { me: 0, opp: 0, p: -1 };
   for (let x = 0; x <= GRID_MAX; x++) {
+    exact.push([]);
     for (let y = 0; y <= GRID_MAX; y++) {
       const p = full[x][y] / norm;
+      exact[x].push(p);
+      if (p > likely.p) likely = { me: x, opp: y, p };
       if (x > y) win += p;
       else if (x === y) draw += p;
       else loss += p;
-      grid[Math.min(x, 4)][Math.min(y, 4)] += p;
+      grid[Math.min(x, GRID_SIZE - 1)][Math.min(y, GRID_SIZE - 1)] += p;
     }
   }
-  let likely = { me: 0, opp: 0, p: -1 };
-  for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) if (grid[x][y] > likely.p) likely = { me: x, opp: y, p: grid[x][y] };
-  return { grid, win, draw, loss, likely };
+  return { grid, exact, win, draw, loss, likely };
 }
 
 export type HostSeat = "me" | "opponent" | null;

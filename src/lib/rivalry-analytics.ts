@@ -731,11 +731,64 @@ export function computeScorelines(matches: AnalyticsMatch[], top = 5): Scoreline
   return { common, margins };
 }
 
+// --- PERSONAL WIN DRIVERS ---
+
+export type WinDriverRow = {
+  stat: EdaStat;
+  label: string;
+  winN: number;
+  lossN: number;
+  winAvg: number | null;
+  lossAvg: number | null;
+  /** winAvg - lossAvg: how much higher this stat is in their wins than in their losses. */
+  lift: number | null;
+  /** Point-biserial correlation of the stat with winning (win = 1, loss = 0); draws excluded. */
+  r: number | null;
+  strength: CorrelationLabel;
+};
+
+function driversFor(ms: AnalyticsMatch[], who: "my" | "opp"): WinDriverRow[] {
+  const won = (m: AnalyticsMatch) => (who === "my" ? outcomeOf(m) === "win" : outcomeOf(m) === "loss");
+  const lost = (m: AnalyticsMatch) => (who === "my" ? outcomeOf(m) === "loss" : outcomeOf(m) === "win");
+  return EDA_STATS.map((stat) => {
+    const wins: number[] = [];
+    const losses: number[] = [];
+    for (const m of ms) {
+      const v = statValue(m[who], stat);
+      if (v === null) continue;
+      if (won(m)) wins.push(v);
+      else if (lost(m)) losses.push(v);
+    }
+    const avg = (xs: number[]) => (xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : null);
+    const winAvg = avg(wins);
+    const lossAvg = avg(losses);
+    const r = pearson([...wins, ...losses], [...wins.map(() => 1), ...losses.map(() => 0)]);
+    return {
+      stat,
+      label: EDA_STAT_LABELS[stat],
+      winN: wins.length,
+      lossN: losses.length,
+      winAvg,
+      lossAvg,
+      lift: winAvg !== null && lossAvg !== null ? winAvg - lossAvg : null,
+      r,
+      strength: correlationLabel(r),
+    };
+  });
+}
+
+/** Each player's own stats in their wins vs their losses. Player A = you, Player B = your rival. */
+export function computePlayerWinDrivers(matches: AnalyticsMatch[]): { playerA: WinDriverRow[]; playerB: WinDriverRow[] } {
+  const ms = onlyConfirmed(matches).filter((m) => (m as { deletedAt?: unknown }).deletedAt == null);
+  return { playerA: driversFor(ms, "my"), playerB: driversFor(ms, "opp") };
+}
+
 export function computeEdaLab(matches: AnalyticsMatch[]) {
   return {
     clutch: computeClutchProfile(matches),
     leading: computeLeadingWinPct(matches),
     correlations: computeStatCorrelations(matches),
+    drivers: computePlayerWinDrivers(matches),
     sessions: computeSessions(matches),
     scorelines: computeScorelines(matches),
   };

@@ -50,6 +50,13 @@
       "when": 1795077999198,
       "tag": "0006_tricky_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795101021043,
+      "tag": "0007_audit_log_append_only",
+      "breakpoints": true
     }
   ]
 }

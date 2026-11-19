@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { eq, inArray, like, or } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
-import { adminAuditLogs, deviceSessions, matches, rivalries, sybilFlags, users } from "@/db/schema";
+import { deviceSessions, matches, rivalries, sybilFlags, users } from "@/db/schema";
 import { buildUserExport, deleteAccount } from "@/lib/account";
 import { checkDeviceAnomalies, checkScoreFarming, hashIp, recordDeviceSession } from "@/lib/anti-sybil";
 import { deleteMatch, getPlatformStats, listRecentMatches } from "@/lib/admin";
@@ -58,9 +58,9 @@ describe("Stage 3A forecast", () => {
         expect(Number.isFinite(p)).toBe(true);
         expect(p).toBeGreaterThanOrEqual(0);
       }
-      expect(g.grid).toHaveLength(5);
-      expect(g.grid[0]).toHaveLength(5);
-      expect(g.grid[g.likely.me][g.likely.opp]).toBeCloseTo(g.likely.p);
+      expect(g.grid).toHaveLength(7);
+      expect(g.grid[0]).toHaveLength(7);
+      expect(g.exact[g.likely.me][g.likely.opp]).toBeCloseTo(g.likely.p);
     }
   });
 
@@ -306,7 +306,6 @@ describe("soft delete, audit log and data rights", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ action: "user.suspend", targetType: "user" });
     expect(logs[0].metadata).toMatchObject({ reason: "x", password: "[redacted]" });
-    await db.delete(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, admin.id));
   });
 
   it("exports only the user's own confirmed matches and no credentials", async () => {

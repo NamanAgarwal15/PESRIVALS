@@ -1,6 +1,9 @@
+"use client";
+
 // Tier 1B Bento cards: derived indices + the Rivalry EDA Lab. Display only;
 // every number comes from the pure functions in rivalry-analytics.ts.
 
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { computeRivalryAnalytics } from "@/lib/rivalry-analytics";
 
@@ -91,7 +94,7 @@ export function EdaLab({ eda, meName, oppName }: { eda: Model["eda"]; meName: st
       <Card>
         <CardHeader>
           <CardTitle>Stat vs Goal Difference (r)</CardTitle>
-          <CardDescription>Correlation between your stat edge and the goal difference. Right of centre helps you.</CardDescription>
+          <CardDescription>Rivalry-wide: across all your matches, how closely the gap between you and your rival in each stat tracks the final goal difference. It describes the rivalry as a whole, not one player. Right of centre favours you.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {correlations.map((c) => (
@@ -114,6 +117,8 @@ export function EdaLab({ eda, meName, oppName }: { eda: Model["eda"]; meName: st
           <p className="text-xs text-muted-foreground">Needs at least 3 matches with the stat recorded.</p>
         </CardContent>
       </Card>
+
+      <PersonalWinDrivers drivers={eda.drivers} meName={meName} oppName={oppName} />
 
       <Card>
         <CardHeader>
@@ -175,5 +180,57 @@ export function EdaLab({ eda, meName, oppName }: { eda: Model["eda"]; meName: st
         </CardContent>
       </Card>
     </>
+  );
+}
+
+function PersonalWinDrivers({ drivers, meName, oppName }: { drivers: Model["eda"]["drivers"]; meName: string; oppName: string }) {
+  const [who, setWho] = useState<"playerA" | "playerB">("playerA");
+  const rows = drivers[who];
+  const name = who === "playerA" ? meName : oppName;
+  const avg = (v: number | null, stat: string) => (v === null ? NA : stat === "possession" || stat === "pass_accuracy" ? `${v.toFixed(1)}%` : v.toFixed(1));
+  const best = rows
+    .filter((r) => r.r !== null && r.lift !== null && r.winN >= 2 && r.lossN >= 2)
+    .sort((a, b) => Math.abs(b.r!) - Math.abs(a.r!))[0];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Personal Win Drivers</CardTitle>
+        <CardDescription>
+          One player at a time: that player&apos;s own average in matches they won compared with matches they lost. Draws are left out. Each player gets their own numbers.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex gap-2" role="group" aria-label="Choose a player">
+          {([["playerA", meName], ["playerB", oppName]] as const).map(([k, label]) => (
+            <button key={k} type="button" aria-pressed={who === k} onClick={() => setWho(k)} className="min-h-9 max-w-40 truncate rounded-full border border-input px-3 text-sm font-medium aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground">
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-96 text-sm">
+            <thead className="text-xs text-muted-foreground uppercase">
+              <tr><th className="py-1 text-left">Stat</th><th>In wins</th><th>In losses</th><th>Lift</th><th className="text-right">r</th></tr>
+            </thead>
+            <tbody className="divide-y divide-border text-center tabular-nums">
+              {rows.map((r) => (
+                <tr key={r.stat}>
+                  <td className="py-1 text-left">{r.label}</td>
+                  <td>{avg(r.winAvg, r.stat)}{r.winN ? <span className="text-xs text-muted-foreground"> (n={r.winN})</span> : null}</td>
+                  <td>{avg(r.lossAvg, r.stat)}{r.lossN ? <span className="text-xs text-muted-foreground"> (n={r.lossN})</span> : null}</td>
+                  <td className={r.lift === null ? "" : r.lift >= 0 ? "text-win" : "text-loss"}>{r.lift === null ? NA : `${r.lift >= 0 ? "+" : "−"}${Math.abs(r.lift).toFixed(1)}`}</td>
+                  <td className="text-right">{r.r === null ? NA : r.r.toFixed(2)} <span className="text-xs text-muted-foreground">{r.strength === "N/A" ? "" : r.strength}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {best
+            ? `In plain English: ${name} tends to win when ${best.label.toLowerCase()} is ${best.lift! >= 0 ? "higher" : "lower"} than usual (${avg(best.winAvg, best.stat)} in wins vs ${avg(best.lossAvg, best.stat)} in losses). This shows a pattern, not proof that it causes the win.`
+            : "Not enough wins and losses with these stats recorded yet (needs at least 2 of each)."}
+        </p>
+      </CardContent>
+    </Card>
   );
 }

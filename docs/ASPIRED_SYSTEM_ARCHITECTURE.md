@@ -214,13 +214,14 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 - **Phase 4** 1-tap context pills (playstyles, stakes/vibe, extra time, host memory in `localStorage`), stubborn Web Push (service worker, VAPID, `requireInteraction`, AES-256-GCM key storage, 3-step opt-out), 60 s JWT revalidation, OWASP hardening, migration `0005` (applied to live Neon).
 
 - **Phase 5** predictive/causal engine (Match Lab), device fingerprint + anti-sybil flags, soft-delete matches, admin audit log, Flagged Activity queue, self-serve export and account deletion, migration `0006` (applied to live Neon).
+- **Phase 6A** exact-score fix (forecast grid is now `0..6+` and the headline score comes from an unpooled `0..15` table, so a pooled bucket is never shown as a scoreline such as `4–4`), asymmetric **Personal Win Drivers** (each player's own stats in wins vs losses, with lift and point-biserial `r`), plain-English explanations under Forecast, Glicko-2, Tilt and Causal, a clearer rivalry-wide subtitle on Stat vs Goal Difference, and a Postgres append-only trigger on `admin_audit_logs` (migration `0007`, applied to local and live Neon).
 
 ### Known problems & caveats
 - **Forecast quality** depends on volume: Stage 3A unlocks at 5 matches, Stage 3B at 20, Tier 2 at 30 *tagged* matches (host plus your playstyle). Estimates are shown with uncertainty and are not guarantees. Draws decided on penalties are treated as draws.
 - **Fingerprint limits:** the hash is a hardware/rendering signal, not an identity. Two siblings on one device or a shared family PC will produce flags; that is why every flag needs an admin decision and nothing is automatic. Browsers that randomise canvas/WebGL can evade it.
 - **Soft delete** keeps rows (and who deleted them) in the database indefinitely; there is no purge job yet.
 - **Account deletion** anonymises rather than removes rows so rivals keep their history; match results the player logged remain, under the name "Deleted player".
-- **Audit log** is append-only by convention in application code (no UPDATE/DELETE path); the database role itself can still modify it.
+- **Audit log** is now append-only in the database: a `BEFORE UPDATE OR DELETE` trigger (migration `0007`) raises on any change. The one deliberate exception is the `ON DELETE SET NULL` foreign key: when a user is deleted, Postgres may null `actor_user_id` and nothing else, so user cleanup keeps working. A superuser could still drop the trigger.
 - Anti-sybil score-farming check runs when a match is saved (non-blocking); device checks run on a daily client check-in.
 - Web Push does nothing until `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `PUSH_ENCRYPTION_KEY` are set in Vercel; the banner stays hidden while unconfigured. In production a missing `PUSH_ENCRYPTION_KEY` makes subscribing fail (by design). Changing the key orphans existing subscriptions.
 - iOS only delivers web push to an installed home-screen app.
@@ -234,8 +235,10 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 - `npm run security:audit` (high and above, production deps) passes after moving the script-only `xlsx` package to devDependencies; moderate advisories in dev tooling remain.
 
 ### Planned next steps
-0. Review the first real anti-sybil flags and tune thresholds; consider a database-level append-only guard (revoke UPDATE/DELETE) on `admin_audit_logs` and a purge policy for soft-deleted matches.
+0. Review the first real anti-sybil flags and tune thresholds, and decide a purge policy for soft-deleted matches. (The audit-log database guard is done in Phase 6A.)
 1. Set the four env vars in Vercel and redeploy; test push on Android Chrome and desktop.
 2. Verify a Resend sending domain.
 3. Phase 5 is shipped; remaining ideas are above (anti-sybil tuning, audit-log DB guard) plus real-world validation of the forecast calibration once rivalries have 30+ matches.
 4. Nonce-based CSP and an `npm audit` clean-up pass.
+5. **Phase 6B (planned, not started):** a cross-rivalry Career Lab on `/stats` and a `user_insights` table for stored insights.
+6. **Phase 6C (planned, not started):** a What-If Simulator and a Rivalry Coach chatbot.
