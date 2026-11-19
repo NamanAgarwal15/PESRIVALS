@@ -355,3 +355,27 @@ export const adminAuditLogs = pgTable("admin_audit_logs", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Cached coaching insights per user. One row per (user, snapshot of their
+ * confirmed matches), so a page refresh without new matches never regenerates.
+ */
+export const userInsights = pgTable(
+  "user_insights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    snapshotHash: varchar("snapshot_hash", { length: 64 }).notNull(),
+    // Array of { id, title, body, category, generatedAt }.
+    insightsJson: jsonb("insights_json").notNull(),
+    // 'ai' or 'deterministic'.
+    source: varchar("source", { length: 16 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("user_insights_user_created_idx").on(t.userId, t.createdAt),
+    uniqueIndex("user_insights_user_snapshot_idx").on(t.userId, t.snapshotHash),
+  ],
+);

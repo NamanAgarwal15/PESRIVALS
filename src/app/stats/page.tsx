@@ -3,6 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CareerLabSections } from "@/components/stats/career-lab";
+import { getCareerLabPage } from "@/lib/career-lab";
 import { getCareerStats } from "@/lib/career-stats";
 import { getSession } from "@/lib/session";
 
@@ -46,11 +48,13 @@ async function StatsContent() {
   if (!stats) redirect("/login");
 
   const { overall, overallComparison, perRivalry } = stats;
+  // Fail closed: if the lab or the insight cache has a problem, the classic stats still render.
+  const labPage = overall.played === 0 ? null : await getCareerLabPage(session.user.id).catch(() => null);
 
   return (
     <>
       <header className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-wide uppercase">Overall Career Stats</h1>
+        <h1 className="text-3xl font-bold tracking-wide uppercase">Personal Career Lab</h1>
         <p className="text-sm text-muted-foreground">
           Me vs All — every confirmed match across your {stats.totalRivalries} active{" "}
           {stats.totalRivalries === 1 ? "rivalry" : "rivalries"}.
@@ -70,6 +74,11 @@ async function StatsContent() {
         </Card>
       ) : (
         <>
+          {labPage ? (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <CareerLabSections lab={labPage.lab} insights={labPage.insights} />
+            </div>
+          ) : null}
           <Card>
             <CardContent className="flex flex-col gap-4">
               <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-3">

@@ -96,10 +96,10 @@ async function HomeContent() {
       >
         <span className="flex flex-col">
           <span className="font-heading text-lg font-semibold tracking-wide uppercase">
-            Overall Career Stats (Me vs All)
+            Personal Career Lab (Me vs All)
           </span>
           <span className="text-sm text-muted-foreground">
-            W-D-L, goals and per-game averages across every rivalry
+            Coach briefing, rival-by-rival matrix and career stats across every rivalry
           </span>
         </span>
         <span className="text-primary" aria-hidden>
