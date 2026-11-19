@@ -13,10 +13,10 @@ PESRIVALS turns casual eFootball 1v1 rivalries into a trustworthy, shareable com
 | Pillar | Answer | Status |
 |---|---|---|
 | Effortless logging | Screenshot of the Full Time screen, read by Gemini Vision | `Shipped (Today)` |
-| Trustworthy stats | Confirmed-only aggregation; AI confidence flags and opponent dispute | `Next Polish (Immediate)` |
+| Trustworthy stats | Confirmed-only aggregation; AI confidence flags and opponent dispute | `Shipped (Today)` |
 | Rivalry depth | Per-rivalry Bento dashboard and career stats | `Shipped (Today)` |
 | Community | Global leaderboard with rivalry requests | `Shipped (Today)` |
-| Safety & privacy | Hashed secrets, RBAC, rate limits; peer privacy model and suspension gaps | `Shipped (Today)` / `Next Polish (Immediate)` |
+| Safety & privacy | Hashed secrets, RBAC, rate limits; peer privacy model, suspension enforcement, audit log, soft delete, data export/delete, anti-sybil flags | `Shipped (Today)` |
 
 ### 1.0 Ingestion as it exists
 
@@ -29,7 +29,7 @@ Screenshot ingestion is the primary live path. Historical data was loaded by one
 
 Schema facts (`src/db/schema.ts`): `match_source` = `import | screenshot`; `match_status` = `confirmed | pending | disputed` (only `confirmed` is written today); `matches.needs_review` exists but is always saved as `false`. Stats are 13 nullable per-side columns (possession, shots, shots on target, fouls, offsides, corners, free kicks, passes, successful passes, crosses, interceptions, tackles, saves).
 
-### 1.1 `MatchTelemetryIngestor` adapter layer — `Next Polish (Immediate)`
+### 1.1 `MatchTelemetryIngestor` adapter layer — `Shipped (Today)`
 
 Today the screenshot reader and the Excel scripts are unrelated code. The refactor puts them behind one interface so the rest of the app only deals with a canonical match:
 
@@ -42,16 +42,16 @@ interface MatchTelemetryIngestor {
 
 | Adapter | Source | Status |
 |---|---|---|
-| `VisionVlmIngestor` (wraps `gemini-extract.ts`) | `screenshot` | `Next Polish (Immediate)` |
-| `SheetImportIngestor` (wraps the sheet scripts) | `import` | `Next Polish (Immediate)` |
+| `VisionVlmIngestor` (wraps `gemini-extract.ts`) | `screenshot` | `Shipped (Today)` |
+| `SheetImportIngestor` (validates parsed sheet rows) | `import` | `Shipped (Today)` |
 | `KonamiIdIngestor` (signed S2S webhooks, idempotent by upstream match id) | `konami_s2s` | `Roadmap (Future)` — only if Konami ever opens an external API |
 
-### 1.2 Two-layer trust flow — `Next Polish (Immediate)`
+### 1.2 Two-layer trust flow — `Shipped (Today)`
 
 1. **AI confidence flags (before saving).** Each extracted field is shown **green** (confident) or **yellow** (needs a look). Yellow is raised for low model confidence or blurry OCR, and for internal inconsistencies such as `shotsOnTarget > shots`, `successfulPasses > passes`, possession not summing to ~100, or a score that disagrees with other fields. The uploader fixes yellow fields before confirming.
 2. **Instant save plus opponent dispute (after saving).** The match is saved as `confirmed` immediately so logging stays fast. The opponent sees a **Dispute** button; using it moves the match to `disputed` (a status that already exists in the enum) for peer or admin resolution. Disputed matches are excluded from analytics and the leaderboard until resolved, and `needs_review` is set when any field was yellow.
 
-### 1.3 Optional eFootball Player ID — `Next Polish (Immediate)`
+### 1.3 Optional eFootball Player ID — `Shipped (Today)`
 
 An optional `efootball_id` profile field (9 digits, unique when set) that users can display and copy so rivals can add each other in-game. It is display-only today. If a KONAMI S2S API ever exists, the same field becomes the identity binding key; unbound IDs are never auto-merged.
 
@@ -106,11 +106,11 @@ Implemented as pure, null-safe functions in `src/lib/rivalry-analytics.ts` (conf
 4. **Session / matchday breakdown** — games played on the same date grouped together.
 5. **Most common scorelines and win-margin distribution.**
 
-### Tier 2 — Causal inference engine — `Roadmap (Future)`
+### Tier 2 — Causal inference engine — `Shipped (Today)` (Phase 5; gated at N ≥ 30 tagged matches)
 
 Propensity Score Matching / IPTW with opponent rating, host seat and playstyle tag as covariates, plus bootstrap confidence intervals and overlap diagnostics. **Gated:** it unlocks only at **N ≥ 30 tagged matches** per rivalry. Until then the UI shows a readiness indicator (for example "12 / 30 tagged matches"). Results are shown as an estimate with uncertainty, never a bare number. Depends on tactical tags (§2).
 
-### Tier 3 — Predictive & sequential engine — `Roadmap (Future)`
+### Tier 3 — Predictive & sequential engine — `Shipped (Today)` (Phase 5; `src/lib/predictive-analytics.ts`)
 
 | Stage | Unlocks at | Components |
 |---|---|---|
@@ -142,7 +142,7 @@ Every model is versioned, backtested on a time-ordered holdout, shown with calib
 
 SMS-based login was removed in `3bd35a1`; there is no SMS provider, gateway or fallback anywhere in the system.
 
-### 4.2 Public profiles vs. peer rivalry privacy — `Next Polish (Immediate)`
+### 4.2 Public profiles vs. peer rivalry privacy — `Shipped (Today)`
 
 Final model:
 
@@ -150,26 +150,26 @@ Final model:
 - The profile privacy toggle (`users.public_leaderboard`, to be renamed to reflect peer visibility) controls only whether **non-rivals** can drill into that user's **individual rivalry matchups and match logs**. The rival in a rivalry always sees it; **admins always retain full visibility**.
 - Today the flag is stored and editable (profile panel, admin page) but not enforced, because no peer-facing drill-down view exists yet. Enforcement ships together with that view.
 
-### 4.3 Suspension enforcement — `Next Polish (Immediate)`
+### 4.3 Suspension enforcement — `Shipped (Today)`
 
 Password login (`verifyCredentials`) and OTP sending (`sendOtp`) block suspended accounts today. **Google sign-in and already-issued JWT sessions do not**; closing both is an immediate polish item (check suspension at Google account resolution and re-validate on session refresh).
 
-### 4.4 Security roadmap — `Roadmap (Future)`
+### 4.4 Security roadmap — `Shipped (Today)` (audit log, export/delete; Phase 5)
 
 - Self-serve data export (JSON/CSV) and account deletion.
 - Append-only admin audit log.
 
 ### 4.5 Verified maturity scorecard (0 none – 5 production-grade)
 
-| Dimension | Verified today | Target after Next Polish | Reasoning |
+| Dimension | Original (pre-Phase 1) | Now (all 5 phases shipped) | Reasoning |
 |---|---|---|---|
-| Authentication | 3.5 | 4.5 | Solid password, OTP and Google flows; suspension bypass via Google/JWT |
-| Authorization | 4 | 4.5 | DB-checked RBAC; no audit log yet |
-| Privacy | 2 | 3.5 | Aggregates only on the leaderboard; peer toggle unenforced; no export/delete |
-| Ingestion | 2 | 3.5 | One reliable screenshot path; no abstraction, confidence or dispute flow |
-| Analytics | 2 | 3.5 | Strong descriptive layer; indices and EDA widgets pending |
-| Prediction / Causal | 0 | 0 | Designed, not built |
-| Observability | 1.5 | 2 | Vercel Analytics and server console logs only |
+| Authentication | 3.5 | 4.5 | Password, OTP, Google; suspension enforced everywhere; 60 s revalidation; hardened cookie; common-password blocklist |
+| Authorization | 4 | 4.5 | DB-checked RBAC, ownership checks, append-only admin audit log |
+| Privacy | 2 | 4 | Peer privacy enforced, self-serve export and account deletion, hashed device and IP data |
+| Ingestion | 2 | 4 | Ingestor abstraction, green/yellow confidence, disputes, dedup, 1-tap context, soft delete |
+| Analytics | 2 | 4 | Tier 1A/1B indices and EDA Lab, Tier 2/3 forecast, ratings, tilt and causal estimates (data-gated) |
+| Prediction / Causal | 0 | 3.5 | Bivariate Poisson forecast, Glicko-2, IPTW with bootstrap CIs; needs real match volume to be sharp |
+| Observability | 1.5 | 3 | Structured redacted security events and the admin audit log; no external alerting yet |
 
 ### 4.6 Known debt (Phase 1 cleared it)
 
@@ -187,7 +187,7 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 2. **Phase 2 — Ingestion trust & abstraction.** `Shipped (Today)`, plus change display name (2–50 characters). Introduce `MatchTelemetryIngestor`; add AI green/yellow confidence flags on extracted fields; add the opponent Dispute (`disputed`) flow.
 3. **Phase 3 — Tier 1B Rivalry EDA Lab & derived indices.** `Shipped (Today)`: the five derived football indices and five EDA widgets on the Bento dashboard, plus hardening (below).
 4. **Phase 4 — Match context pills & Stubborn Web Push.** `Shipped (Today)`. Single screenshot only (no multi-screen, no video). Add 1-tap context pills at save time: Playstyle, Host / Session memory, Extra Time / Penalties, Match Stakes / Vibe. Add **Stubborn Web Push Notifications**: a Service Worker with VAPID keys, persistent alerts using `requireInteraction: true`, and a deliberately multi-step in-app opt-out (several confirmation screens) rather than one-tap disable.
-5. **Phase 5 — Tier 2 & Tier 3 modeling.** Stage 3A Bivariate Poisson and EWMA forecast (N ≥ 5); Stage 3B Glicko-2, tilt detector and clash matrix (N ≥ 20); Tier 2 causal inference (N ≥ 30 tagged matches).
+5. **Phase 5 — Tier 2 & Tier 3 modeling, anti-sybil, governance.** `Shipped (Today)`. Stage 3A Bivariate Poisson and EWMA forecast (N ≥ 5); Stage 3B Glicko-2, tilt detector and clash matrix (N ≥ 20); Tier 2 causal inference (N ≥ 30 tagged matches).
 
 ## 6. OWASP Top 10:2025 mapping
 
@@ -202,7 +202,8 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 | A08 Integrity Failures | No client-trusted role or ownership; server recomputes review flags; service worker is same-origin only | `Shipped (Today)` |
 | A09 Logging & Alerting | `src/lib/security-log.ts`: structured JSON events (auth blocks, rate-limit hits, invalid push endpoints, push pruning, dispute activity) with secrets and PII redacted | `Shipped (Today)` (Phase 4) |
 | A10 Mishandling Exceptional Conditions | Push routes and sending fail closed with generic errors; a failed push never breaks a match save | `Shipped (Today)` (Phase 4) |
-| Phase 5 additions | Admin audit log, soft-delete matches, self-serve data export/delete, device fingerprinting / anti-Sybil | `Roadmap (Future)` |
+| A06 Insecure Design / anti-abuse | Device fingerprint (client-side SHA-256, no raw buffers), anti-sybil detector (self-rivalry, account farm, score-farming cadence) that only raises admin-review flags | `Shipped (Today)` (Phase 5) |
+| A08/A09 Integrity & Audit | Append-only `admin_audit_logs`, soft-deleted matches kept for forensics | `Shipped (Today)` (Phase 5) |
 
 ## 7. Implementation progress, known caveats & next steps (living)
 
@@ -212,7 +213,15 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 - **Phase 3** (`bb5c239`) five derived indices, EDA Lab, leaderboard cache, screenshot dedup, trusted IP headers.
 - **Phase 4** 1-tap context pills (playstyles, stakes/vibe, extra time, host memory in `localStorage`), stubborn Web Push (service worker, VAPID, `requireInteraction`, AES-256-GCM key storage, 3-step opt-out), 60 s JWT revalidation, OWASP hardening, migration `0005` (applied to live Neon).
 
+- **Phase 5** predictive/causal engine (Match Lab), device fingerprint + anti-sybil flags, soft-delete matches, admin audit log, Flagged Activity queue, self-serve export and account deletion, migration `0006` (applied to live Neon).
+
 ### Known problems & caveats
+- **Forecast quality** depends on volume: Stage 3A unlocks at 5 matches, Stage 3B at 20, Tier 2 at 30 *tagged* matches (host plus your playstyle). Estimates are shown with uncertainty and are not guarantees. Draws decided on penalties are treated as draws.
+- **Fingerprint limits:** the hash is a hardware/rendering signal, not an identity. Two siblings on one device or a shared family PC will produce flags; that is why every flag needs an admin decision and nothing is automatic. Browsers that randomise canvas/WebGL can evade it.
+- **Soft delete** keeps rows (and who deleted them) in the database indefinitely; there is no purge job yet.
+- **Account deletion** anonymises rather than removes rows so rivals keep their history; match results the player logged remain, under the name "Deleted player".
+- **Audit log** is append-only by convention in application code (no UPDATE/DELETE path); the database role itself can still modify it.
+- Anti-sybil score-farming check runs when a match is saved (non-blocking); device checks run on a daily client check-in.
 - Web Push does nothing until `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `PUSH_ENCRYPTION_KEY` are set in Vercel; the banner stays hidden while unconfigured. In production a missing `PUSH_ENCRYPTION_KEY` makes subscribing fail (by design). Changing the key orphans existing subscriptions.
 - iOS only delivers web push to an installed home-screen app.
 - Because of the 60 s window, a suspension or role change can take up to 60 s to reach an open session.
@@ -225,7 +234,8 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 - `npm run security:audit` (high and above, production deps) passes after moving the script-only `xlsx` package to devDependencies; moderate advisories in dev tooling remain.
 
 ### Planned next steps
+0. Review the first real anti-sybil flags and tune thresholds; consider a database-level append-only guard (revoke UPDATE/DELETE) on `admin_audit_logs` and a purge policy for soft-deleted matches.
 1. Set the four env vars in Vercel and redeploy; test push on Android Chrome and desktop.
 2. Verify a Resend sending domain.
-3. Phase 5: Stage 3A/3B forecasting, Tier 2 causal inference using the tagged matches, admin audit log, soft-delete matches, data export/delete, anti-Sybil checks.
+3. Phase 5 is shipped; remaining ideas are above (anti-sybil tuning, audit-log DB guard) plus real-world validation of the forecast calibration once rivalries have 30+ matches.
 4. Nonce-based CSP and an `npm audit` clean-up pass.

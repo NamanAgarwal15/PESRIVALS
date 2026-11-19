@@ -62,7 +62,7 @@ const opponentColumns = {
 };
 
 // Correlated count; "rivalries" is the outer table in every query that uses it.
-const matchCountSql = sql<number>`(SELECT count(*)::int FROM matches m WHERE m.rivalry_id = "rivalries"."id" AND m.status = 'confirmed')`;
+const matchCountSql = sql<number>`(SELECT count(*)::int FROM matches m WHERE m.rivalry_id = "rivalries"."id" AND m.status = 'confirmed' AND m.deleted_at IS NULL)`;
 
 // ---------------------------------------------------------------------------
 // Search

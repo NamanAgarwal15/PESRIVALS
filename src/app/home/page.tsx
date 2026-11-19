@@ -10,6 +10,7 @@ import {
 } from "@/components/rivalries/rivalry-sections";
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/lib/auth-actions";
+import { FingerprintReporter } from "@/components/security/fingerprint-reporter";
 import { PushBanner } from "@/components/push/push-banner";
 import { ProfilePanel } from "@/components/account/profile-panel";
 import { getAnnouncement } from "@/lib/admin";
@@ -47,6 +48,7 @@ async function HomeContent() {
 
   return (
     <>
+      <FingerprintReporter />
       <PushBanner />
       {announcement ? (
         <p role="status" className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm">

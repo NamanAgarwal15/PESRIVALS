@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from "react";
 import { DerivedIndicesCard, EdaLab } from "@/components/dashboard/eda-lab";
+import { MatchLab } from "@/components/dashboard/match-lab";
 import { MatchList } from "@/components/matches/match-list";
 import {
   ChartTeams,
@@ -331,6 +332,7 @@ export function RivalryDashboard({
           played={summary.played}
           derived={derived}
           eda={eda}
+          allMatches={matches}
         />
       )}
     </div>
@@ -654,6 +656,7 @@ function AnalysisTab({
   played,
   derived,
   eda,
+  allMatches,
 }: {
   series: ReturnType<typeof computeRivalryAnalytics>["series"];
   comparison: ReturnType<typeof computeRivalryAnalytics>["comparison"];
@@ -663,6 +666,8 @@ function AnalysisTab({
   played: number;
   derived: ReturnType<typeof computeRivalryAnalytics>["derived"];
   eda: ReturnType<typeof computeRivalryAnalytics>["eda"];
+  /** Unfiltered matches: the forecast does not depend on the dashboard filters. */
+  allMatches: Parameters<typeof computeRivalryAnalytics>[0];
 }) {
   if (played === 0) {
     return (
@@ -726,6 +731,7 @@ function AnalysisTab({
           <PlaystyleRadar comparison={comparison} meName={meName} oppName={oppName} />
         </CardContent>
       </Card>
+      <MatchLab matches={allMatches} meName={meName} oppName={oppName} />
       <DerivedIndicesCard derived={derived} meName={meName} oppName={oppName} />
       <EdaLab eda={eda} meName={meName} oppName={oppName} />
     </div>

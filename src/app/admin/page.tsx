@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import {
   adminDeleteMatchAction,
+  adminResolveSybilFlagAction,
   adminSetAnnouncementAction,
   adminSetPasswordAction,
   adminSetRoleAction,
@@ -17,9 +18,11 @@ import {
   getAnnouncement,
   getPlatformStats,
   isAdminUser,
+  listOpenSybilFlags,
   listRecentMatches,
   listUsers,
 } from "@/lib/admin";
+import { listAuditLogs } from "@/lib/audit";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Admin | PESRIVALS", robots: { index: false } };
@@ -42,11 +45,13 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
 
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
-  const [stats, userRows, recent, announcement] = await Promise.all([
+  const [stats, userRows, recent, announcement, flags, audit] = await Promise.all([
     getPlatformStats(),
     listUsers(q),
     listRecentMatches(),
     getAnnouncement(),
+    listOpenSybilFlags(),
+    listAuditLogs(),
   ]);
   const matchRows = (recent as unknown as { rows: Record<string, string | number>[] }).rows;
   const kpis: [string, number][] = [
@@ -143,8 +148,33 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
 
       <Card>
         <CardHeader>
+          <CardTitle>Flagged activity (anti-sybil)</CardTitle>
+          <CardDescription>Automatic checks only raise flags. Nothing is banned until you decide.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {flags.map((f) => (
+            <form key={f.id} action={adminResolveSybilFlagAction} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3 text-sm last:border-0">
+              <input type="hidden" name="flagId" value={f.id} />
+              <span className="min-w-0 flex-1">
+                <b className={f.severity === "high" ? "text-loss" : "text-draw"}>{f.severity.toUpperCase()}</b>{" "}
+                {f.flagType.replace(/_/g, " ")}: @{f.primary}
+                {f.relatedUsername ? ` and @${f.relatedUsername}` : ""}
+                <span className="block text-xs text-muted-foreground">{f.reason}</span>
+              </span>
+              <span className="flex gap-2">
+                <Button type="submit" name="decision" value="dismiss" size="sm" variant="outline">Dismiss</Button>
+                <Button type="submit" name="decision" value="suspend" size="sm" variant="destructive">Suspend @{f.primary}</Button>
+              </span>
+            </form>
+          ))}
+          {flags.length === 0 ? <p className="text-sm text-muted-foreground">No open flags.</p> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Recent matches</CardTitle>
-          <CardDescription>Delete fraudulent or corrupt entries.</CardDescription>
+          <CardDescription>Remove fraudulent or corrupt entries (soft delete, logged).</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {matchRows.map((m) => (
@@ -157,6 +187,31 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
               <Button type="submit" size="sm" variant="destructive">Delete</Button>
             </form>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Admin audit log</CardTitle>
+          <CardDescription>Append-only record of the latest 50 admin actions.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full min-w-96 text-sm">
+            <thead className="text-left text-xs text-muted-foreground uppercase">
+              <tr><th className="py-1">When</th><th>Admin</th><th>Action</th><th>Target</th></tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {audit.map((a) => (
+                <tr key={a.id}>
+                  <td className="py-1 tabular-nums">{a.createdAt.toISOString().replace("T", " ").slice(0, 16)}</td>
+                  <td>@{a.actor ?? "?"}</td>
+                  <td>{a.action}</td>
+                  <td className="font-mono text-xs">{a.targetType}:{a.targetId.slice(0, 8)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {audit.length === 0 ? <p className="text-sm text-muted-foreground">No admin actions yet.</p> : null}
         </CardContent>
       </Card>
     </>

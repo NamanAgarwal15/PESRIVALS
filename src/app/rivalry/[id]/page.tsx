@@ -30,6 +30,7 @@ export default function RivalryPage({ params }: PageProps<"/rivalry/[id]">) {
 // Reads the session and the URL, so it streams in behind the Suspense boundary.
 // src/proxy.ts runs the same membership check first so that a missing rivalry
 // is a real HTTP 404; this is the check that actually guards the data.
+import { FingerprintReporter } from "@/components/security/fingerprint-reporter";
 import { PushBanner } from "@/components/push/push-banner";
 
 async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "params">) {
@@ -46,6 +47,7 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
 
   return (
     <>
+      <FingerprintReporter />
       <PushBanner />
       <header className="flex flex-col gap-4">
         <h1 className="sr-only">

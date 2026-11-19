@@ -22,6 +22,10 @@ export type AnalyticsMatch = {
   needsReview: boolean;
   /** Absent on legacy callers; anything other than "confirmed" is ignored by Tier 1B. */
   status?: "confirmed" | "pending" | "disputed";
+  /** Phase 4 context tags (null when untagged). */
+  myPlaystyle?: string | null;
+  oppPlaystyle?: string | null;
+  matchContext?: string | null;
   my: StatSides;
   opp: StatSides;
 };

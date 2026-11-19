@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { recordAudit } from "@/lib/audit";
+import { checkScoreFarming } from "@/lib/anti-sybil";
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { sendPushToUser } from "@/lib/push";
 import { securityLog } from "@/lib/security-log";
@@ -38,6 +40,8 @@ export async function saveExtractedMatch(input: SaveMatchInput): Promise<SaveMat
     if (isUuid(rivalryId)) revalidatePath(`/rivalry/${rivalryId}`);
     revalidatePath("/home");
     refreshLeaderboard();
+    // Non-blocking anomaly check; it only raises admin-review flags.
+    if (isUuid(rivalryId)) after(() => checkScoreFarming(rivalryId).catch(() => 0));
     const opponentId = result.opponentId;
     const url = isUuid(rivalryId) ? `/rivalry/${rivalryId}` : "/home";
     after(() =>
@@ -104,6 +108,7 @@ export async function resolveMatchDisputeAction(matchId: string): Promise<Disput
   const me = await actor();
   const result = await resolveMatchDispute(me.id, me.isAdmin, matchId);
   if (result.ok) {
+    if (me.isAdmin) await recordAudit(me.id, "match.resolve_dispute", "match", matchId);
     refresh(result.rivalryId);
     notifyAll(result.notify, {
       title: "Dispute resolved",

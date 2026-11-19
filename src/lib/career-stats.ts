@@ -2,7 +2,7 @@
 // rivalries. The pure aggregation lives in rivalry-analytics.ts; this file
 // loads the data (strict user_a/user_b mapping) and summarizes per rivalry.
 
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries, users } from "@/db/schema";
 import {
@@ -40,7 +40,7 @@ export async function getRivalryAnalyticsMatches(
   const rows = await db
     .select()
     .from(matches)
-    .where(and(eq(matches.rivalryId, rivalry.id), eq(matches.status, "confirmed")))
+    .where(and(eq(matches.rivalryId, rivalry.id), eq(matches.status, "confirmed"), isNull(matches.deletedAt)))
     .orderBy(asc(matches.matchNo));
   return rows.map((row) => toAnalyticsMatch(row, currentUserId, iAmA));
 }
@@ -97,6 +97,9 @@ export function toAnalyticsMatch(row: RawMatch, currentUserId: string, iAmA: boo
     decidedOnPens: row.decidedOnPens,
     needsReview: row.needsReview,
     status: row.status,
+    myPlaystyle: iAmA ? row.playstyleA : row.playstyleB,
+    oppPlaystyle: iAmA ? row.playstyleB : row.playstyleA,
+    matchContext: row.matchContext,
     my,
     opp,
   };
@@ -160,6 +163,7 @@ export async function getCareerStats(currentUserId: string): Promise<CareerStats
           rows.map((r) => r.id),
         ),
         eq(matches.status, "confirmed"),
+        isNull(matches.deletedAt),
       ),
     )
     .orderBy(asc(matches.matchNo));

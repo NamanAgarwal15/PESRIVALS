@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PushSettings } from "@/components/push/push-settings";
 import { CopyButton } from "@/components/profile/copy-button";
-import { linkGoogleAction, setProfileVisibilityAction, updateDisplayNameAction } from "@/lib/auth-actions";
+import { deleteMyAccountAction, linkGoogleAction, setProfileVisibilityAction, updateDisplayNameAction } from "@/lib/auth-actions";
 import {
   type ProfileState,
   commitProfileChangeAction,
@@ -161,6 +161,44 @@ function NameRow({ initial }: { initial: string }) {
   );
 }
 
+function DataRightsSection() {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <div className="flex flex-col gap-2 border-t border-border/50 pt-3">
+      <p className="text-sm font-semibold">Your data</p>
+      <div className="flex flex-wrap gap-2">
+        <a href="/api/account/export" download className="inline-flex h-10 items-center rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted">
+          Export my data (JSON)
+        </a>
+        <Button type="button" variant="destructive" className="h-10" onClick={() => setOpen((v) => !v)}>
+          Delete my account
+        </Button>
+      </div>
+      {open ? (
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-xs text-muted-foreground">
+            This removes your login, email and devices and renames you to “Deleted player”. Match results stay so your rivals keep their history. This cannot be undone. Type <strong>DELETE</strong> to confirm.
+          </p>
+          <Input aria-label="Type DELETE to confirm" value={typed} onChange={(e) => setTyped(e.target.value)} className="h-10 w-40" />
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={pending || typed !== "DELETE"}
+            className="h-10"
+            onClick={() => start(async () => { const r = await deleteMyAccountAction(typed); if (!r.ok) setError(r.error); })}
+          >
+            Permanently delete
+          </Button>
+          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function EfootballIdSection({ initial }: { initial: string | null }) {
   const [value, setValue] = useState(initial ?? "");
   const [saved, setSaved] = useState(initial);
@@ -260,6 +298,7 @@ export function ProfilePanel({
             <PushSettings />
             <ChangeSection kind="password" title="Change password" hasPassword={hasPassword} />
             <ChangeSection kind="email" title={email ? "Change email" : "Add email"} />
+            <DataRightsSection />
             <label className="flex items-start gap-2 border-t border-border/50 pt-3 text-sm">
               <input
                 type="checkbox"

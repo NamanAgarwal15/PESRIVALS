@@ -4,7 +4,7 @@
 // head-to-head matchups, or emails.
 // Framework-free so it is unit-testable.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries, users } from "@/db/schema";
 import { computeSummary, type Summary } from "@/lib/rivalry-analytics";
@@ -29,7 +29,9 @@ export async function loadActiveMatches(): Promise<CareerMatch[]> {
     .select({ match: matches, userAId: rivalries.userAId, userBId: rivalries.userBId })
     .from(matches)
     .innerJoin(rivalries, eq(matches.rivalryId, rivalries.id))
-    .where(and(eq(matches.status, "confirmed"), eq(rivalries.status, "active")));
+    .where(
+      and(eq(matches.status, "confirmed"), eq(rivalries.status, "active"), isNull(matches.deletedAt)),
+    );
   return joined.map((j) => ({ ...j.match, userAId: j.userAId, userBId: j.userBId }));
 }
 

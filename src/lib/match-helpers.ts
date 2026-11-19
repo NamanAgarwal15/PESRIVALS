@@ -2,7 +2,7 @@
 // next/* imports) so it can be exercised directly by Vitest. Every function
 // takes the acting user's id explicitly and checks rivalry membership itself.
 
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries } from "@/db/schema";
 import { getCachedExtraction, putCachedExtraction, sha256Hex } from "@/lib/extract-cache";
@@ -246,7 +246,7 @@ export async function getRivalryMatches(
       remark: matches.remark,
     })
     .from(matches)
-    .where(eq(matches.rivalryId, rivalry.id))
+    .where(and(eq(matches.rivalryId, rivalry.id), isNull(matches.deletedAt)))
     .orderBy(desc(matches.matchNo))
     .limit(limit);
 
@@ -292,7 +292,7 @@ async function loadMatchForActor(actorId: string, isAdmin: boolean, matchId: unk
     })
     .from(matches)
     .innerJoin(rivalries, eq(matches.rivalryId, rivalries.id))
-    .where(and(eq(matches.id, matchId), eq(rivalries.status, "active")));
+    .where(and(eq(matches.id, matchId), isNull(matches.deletedAt), eq(rivalries.status, "active")));
   if (!row) return null;
   if (!isAdmin && row.userAId !== actorId && row.userBId !== actorId) return null;
   return row;

@@ -1,9 +1,9 @@
 // Admin data layer (RBAC is enforced by the callers in admin-actions.ts and
 // the /admin page). Framework-free so it is unit-tested directly.
 
-import { count, eq, gte, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { matches, rivalries, siteSettings, users } from "@/db/schema";
+import { matches, rivalries, siteSettings, sybilFlags, users } from "@/db/schema";
 
 export const ANNOUNCEMENT_KEY = "announcement";
 
@@ -22,8 +22,8 @@ export async function getPlatformStats() {
   const [[u], [r], [m], [m7]] = await Promise.all([
     db.select({ n: count() }).from(users),
     db.select({ n: count() }).from(rivalries).where(eq(rivalries.status, "active")),
-    db.select({ n: count() }).from(matches),
-    db.select({ n: count() }).from(matches).where(gte(matches.createdAt, weekAgo)),
+    db.select({ n: count() }).from(matches).where(isNull(matches.deletedAt)),
+    db.select({ n: count() }).from(matches).where(and(isNull(matches.deletedAt), gte(matches.createdAt, weekAgo))),
   ]);
   return { users: u.n, activeRivalries: r.n, matches: m.n, matchesLast7Days: m7.n };
 }
@@ -40,7 +40,7 @@ export async function listUsers(search = "") {
       role: users.role,
       suspended: users.suspended,
       publicLeaderboard: users.publicLeaderboard,
-      matchCount: sql<number>`(select count(*)::int from matches m join rivalries r on r.id = m.rivalry_id where r.user_a_id = "users"."id" or r.user_b_id = "users"."id")`,
+      matchCount: sql<number>`(select count(*)::int from matches m join rivalries r on r.id = m.rivalry_id where (r.user_a_id = "users"."id" or r.user_b_id = "users"."id") and m.deleted_at is null)`,
     })
     .from(users)
     .where(
@@ -66,6 +66,7 @@ export async function listRecentMatches(limit = 25) {
     JOIN rivalries r ON r.id = m.rivalry_id
     JOIN users ua ON ua.id = r.user_a_id
     JOIN users ub ON ub.id = r.user_b_id
+    WHERE m.deleted_at IS NULL
     ORDER BY m.created_at DESC
     LIMIT ${limit}
   `);
@@ -100,8 +101,45 @@ export async function setRole(userId: string, role: "user" | "admin"): Promise<R
   return { ok: true };
 }
 
-export async function deleteMatch(matchId: string) {
-  await db.delete(matches).where(eq(matches.id, matchId));
+/** Soft delete: the row stays for the audit trail but disappears from every query. */
+export async function deleteMatch(matchId: string, actorId: string): Promise<boolean> {
+  const rows = await db
+    .update(matches)
+    .set({ deletedAt: new Date(), deletedBy: actorId })
+    .where(and(eq(matches.id, matchId), isNull(matches.deletedAt)))
+    .returning({ id: matches.id });
+  return rows.length > 0;
+}
+
+export async function listOpenSybilFlags(limit = 50) {
+  const related = db.$with("related").as(db.select({ id: users.id, username: users.username }).from(users));
+  return db
+    .with(related)
+    .select({
+      id: sybilFlags.id,
+      flagType: sybilFlags.flagType,
+      severity: sybilFlags.severity,
+      reason: sybilFlags.reason,
+      createdAt: sybilFlags.createdAt,
+      primaryUserId: sybilFlags.primaryUserId,
+      primary: users.username,
+      relatedUsername: related.username,
+    })
+    .from(sybilFlags)
+    .innerJoin(users, eq(users.id, sybilFlags.primaryUserId))
+    .leftJoin(related, eq(related.id, sybilFlags.relatedUserId))
+    .where(eq(sybilFlags.status, "open"))
+    .orderBy(desc(sybilFlags.createdAt))
+    .limit(limit);
+}
+
+export async function resolveSybilFlag(flagId: string, actorId: string, status: "dismissed" | "actioned") {
+  const rows = await db
+    .update(sybilFlags)
+    .set({ status, resolvedBy: actorId, resolvedAt: new Date() })
+    .where(and(eq(sybilFlags.id, flagId), eq(sybilFlags.status, "open")))
+    .returning({ id: sybilFlags.id, primaryUserId: sybilFlags.primaryUserId });
+  return rows[0] ?? null;
 }
 
 export async function getAnnouncement(): Promise<string | null> {

@@ -43,6 +43,13 @@
       "when": 1795075991546,
       "tag": "0005_silly_callisto",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795077999198,
+      "tag": "0006_tricky_triathlon",
+      "breakpoints": true
     }
   ]
 }

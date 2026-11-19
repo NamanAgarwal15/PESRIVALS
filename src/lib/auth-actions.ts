@@ -20,6 +20,8 @@ import {
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { createPasswordResetToken, resetPasswordWithToken } from "@/lib/password-reset";
 import { sendOtp } from "@/lib/otp";
+import { deleteAccount } from "@/lib/account";
+import { securityLog } from "@/lib/security-log";
 import { setDisplayName } from "@/lib/profile";
 import { revalidatePath } from "next/cache";
 import { refreshLeaderboard } from "@/lib/leaderboard-cache";
@@ -300,4 +302,17 @@ export async function updateDisplayNameAction(
     revalidatePath("/player/[username]", "page");
   }
   return result;
+}
+
+/** Confirmation-gated account deletion (type DELETE). Anonymises the account and signs out. */
+export async function deleteMyAccountAction(confirm: string): Promise<{ ok: false; error: string }> {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  if (confirm !== "DELETE") return { ok: false, error: "Type DELETE to confirm." };
+  const result = await deleteAccount(session.user.id);
+  if (!result.ok) return result;
+  securityLog("account_deleted", { userId: session.user.id }, "info");
+  refreshLeaderboard();
+  await signOut({ redirectTo: "/?deleted=1" });
+  return { ok: false, error: "Signed out." }; // unreachable: signOut redirects
 }

@@ -4,6 +4,7 @@ import {
   check,
   date,
   index,
+  jsonb,
   integer,
   pgEnum,
   pgTable,
@@ -11,6 +12,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -223,6 +225,10 @@ export const matches = pgTable(
     isPenalties: boolean("is_penalties").default(false),
     matchContext: varchar("match_context", { length: 32 }),
 
+    // Soft delete: a non-null deleted_at hides the match everywhere.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
+
     // Stats: all nullable, one column per side.
     userAPossession: smallint("user_a_possession"),
     userBPossession: smallint("user_b_possession"),
@@ -301,4 +307,51 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   userAgent: varchar("user_agent", { length: 255 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+});
+
+/** One row per (user, device fingerprint). The hash is computed in the browser. */
+export const deviceSessions = pgTable(
+  "device_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fingerprintHash: varchar("fingerprint_hash", { length: 64 }).notNull(),
+    ipHash: varchar("ip_hash", { length: 64 }),
+    userAgent: varchar("user_agent", { length: 255 }),
+    seenCount: integer("seen_count").notNull().default(1),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("device_sessions_user_fingerprint_idx").on(t.userId, t.fingerprintHash)],
+);
+
+/** Anti-sybil anomalies. Always reviewed by an admin; never an automatic ban. */
+export const sybilFlags = pgTable("sybil_flags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  flagType: varchar("flag_type", { length: 32 }).notNull(),
+  severity: varchar("severity", { length: 16 }).notNull(),
+  primaryUserId: uuid("primary_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  relatedUserId: uuid("related_user_id").references(() => users.id, { onDelete: "set null" }),
+  rivalryId: uuid("rivalry_id").references(() => rivalries.id, { onDelete: "set null" }),
+  fingerprintHash: varchar("fingerprint_hash", { length: 64 }),
+  reason: text("reason").notNull(),
+  status: varchar("status", { length: 16 }).notNull().default("open"),
+  resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Append-only record of admin actions (the app only ever inserts and reads). */
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 64 }).notNull(),
+  targetType: varchar("target_type", { length: 32 }).notNull(),
+  targetId: varchar("target_id", { length: 64 }).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

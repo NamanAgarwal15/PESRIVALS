@@ -4,7 +4,7 @@
 // public_leaderboard on (peer rivalry privacy). When access is denied the
 // private data is never even queried. Framework-free so it is unit-tested.
 
-import { and, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries, users } from "@/db/schema";
 import { outcomeOf } from "@/lib/rivalry-analytics";
@@ -63,6 +63,7 @@ async function loadUserMatches(userId: string): Promise<CareerMatch[]> {
     .where(
       and(
         eq(matches.status, "confirmed"),
+        isNull(matches.deletedAt),
         eq(rivalries.status, "active"),
         or(eq(rivalries.userAId, userId), eq(rivalries.userBId, userId)),
       ),
