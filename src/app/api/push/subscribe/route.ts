@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { checkPushEndpoint, hasSubscription, isPushConfigured, saveSubscription } from "@/lib/push";
-import { pushJson, pushUser } from "@/lib/push-route";
+import { apiUser, noStoreJson as pushJson } from "@/lib/api-guard";
 import { securityLog } from "@/lib/security-log";
 
 const bodySchema = z.object({
@@ -11,7 +11,7 @@ const bodySchema = z.object({
 
 // GET: is push available, the public VAPID key, and is this user subscribed?
 export async function GET(request: Request) {
-  const who = await pushUser(request, false);
+  const who = await apiUser(request, false);
   if ("error" in who) return who.error;
   try {
     return pushJson(
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const who = await pushUser(request, true);
+  const who = await apiUser(request, true);
   if ("error" in who) return who.error;
   try {
     const rl = await consumeRateLimit(`push-sub:${who.userId}`, LIMITS.pushSubscribe.max, LIMITS.pushSubscribe.windowMinutes);

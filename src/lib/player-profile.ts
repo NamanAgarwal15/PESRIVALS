@@ -9,7 +9,7 @@ import { db } from "@/db";
 import { matches, rivalries, users } from "@/db/schema";
 import { outcomeOf } from "@/lib/rivalry-analytics";
 import { toAnalyticsMatch } from "@/lib/career-stats";
-import { type CareerMatch, summarizeCareer } from "@/lib/leaderboard";
+import { type ActiveMatchRow, summarizeCareer } from "@/lib/leaderboard";
 import { type RivalryRelation, getRelationMap } from "@/lib/rivalry-helpers";
 
 export type Viewer = { id: string; role: "user" | "admin" };
@@ -55,7 +55,7 @@ export type PlayerProfile = {
   recentMatches: PlayerMatchLog[];
 };
 
-async function loadUserMatches(userId: string): Promise<CareerMatch[]> {
+async function loadUserMatches(userId: string): Promise<ActiveMatchRow[]> {
   const joined = await db
     .select({ match: matches, userAId: rivalries.userAId, userBId: rivalries.userBId })
     .from(matches)

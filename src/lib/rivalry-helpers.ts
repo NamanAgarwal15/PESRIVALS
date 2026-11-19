@@ -240,7 +240,6 @@ export async function sendRivalryRequest(
   return fail("Something changed, please try again");
 }
 
-export type RivalryDecision = "accept" | "decline";
 
 export async function respondToRivalryRequest(
   currentUserId: string,
@@ -355,7 +354,8 @@ export async function getUserRivalries(currentUserId: string): Promise<UserRival
         inArray(rivalries.status, ["active", "pending"]),
       ),
     )
-    .orderBy(desc(rivalries.createdAt));
+    .orderBy(desc(rivalries.createdAt))
+    .limit(500);
 
   for (const { status, requestedBy, ...summary } of rows) {
     if (status === "active") out.activeRivalries.push(summary);
@@ -452,7 +452,8 @@ export async function getRelationMap(
   const rows = await db
     .select()
     .from(rivalries)
-    .where(or(eq(rivalries.userAId, currentUserId), eq(rivalries.userBId, currentUserId)));
+    .where(or(eq(rivalries.userAId, currentUserId), eq(rivalries.userBId, currentUserId)))
+    .limit(1000);
   const out: Record<string, { relation: RivalryRelation; rivalryId: string }> = {};
   for (const row of rows) {
     const other = row.userAId === currentUserId ? row.userBId : row.userAId;

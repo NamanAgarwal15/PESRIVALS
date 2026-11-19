@@ -81,7 +81,7 @@ function refresh(rivalryId: string) {
 }
 
 /** Flags a confirmed match as disputed so it stops counting until resolved. */
-export async function disputeMatchAction(matchId: string, reason?: string): Promise<DisputeResult> {
+export async function disputeMatchAction(matchId: string, reason?: unknown): Promise<DisputeResult> {
   const me = await actor();
   // Repeated disputes are logged and throttled (abuse / harassment signal).
   const rl = await consumeRateLimit(`dispute:${me.id}`, LIMITS.dispute.max, LIMITS.dispute.windowMinutes);
@@ -89,7 +89,7 @@ export async function disputeMatchAction(matchId: string, reason?: string): Prom
     securityLog("dispute_spike", { userId: me.id });
     return { ok: false, error: "Too many disputes. Try again later." };
   }
-  const result = await disputeMatch(me.id, me.isAdmin, matchId, reason);
+  const result = await disputeMatch(me.id, me.isAdmin, matchId, typeof reason === "string" ? reason : undefined);
   if (result.ok) {
     securityLog("dispute_created", { userId: me.id, matchId, rivalryId: result.rivalryId }, "info");
     refresh(result.rivalryId);

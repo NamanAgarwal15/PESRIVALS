@@ -1,9 +1,9 @@
 import { removeSubscription } from "@/lib/push";
-import { pushJson, pushUser } from "@/lib/push-route";
+import { apiUser, noStoreJson as pushJson } from "@/lib/api-guard";
 import { securityLog } from "@/lib/security-log";
 
 export async function POST(request: Request) {
-  const who = await pushUser(request, true);
+  const who = await apiUser(request, true);
   if ("error" in who) return who.error;
   try {
     const body = (await request.json().catch(() => null)) as { endpoint?: unknown } | null;

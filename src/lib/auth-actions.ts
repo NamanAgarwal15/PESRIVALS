@@ -277,12 +277,12 @@ export async function loginWithOtpAction(formData: FormData): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Toggles whether other (non-admin) players may inspect this profile's rivalry details. */
-export async function setProfileVisibilityAction(visible: boolean): Promise<{ ok: boolean }> {
+export async function setProfileVisibilityAction(visible: unknown): Promise<{ ok: boolean }> {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   await db
     .update(users)
-    .set({ publicLeaderboard: visible, updatedAt: new Date() })
+    .set({ publicLeaderboard: visible === true, updatedAt: new Date() })
     .where(eq(users.id, session.user.id));
   await unstable_update({});
   return { ok: true };

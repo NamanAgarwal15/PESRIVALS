@@ -62,7 +62,7 @@ export async function commitProfileChangeAction(
   let verified = false;
   if (kind === "password" && current) {
     const [row] = await db.select({ h: users.passwordHash }).from(users).where(eq(users.id, userId));
-    verified = Boolean(row?.h) && (await bcrypt.compare(current, row!.h!));
+    verified = typeof row?.h === "string" && (await bcrypt.compare(current, row.h));
     if (!verified) return { ok: false, error: "Current password is incorrect." };
   }
   if (!verified) {
@@ -77,9 +77,9 @@ export async function commitProfileChangeAction(
 }
 
 /** Saves (or clears, when blank) the optional eFootball ID. */
-export async function updateEfootballIdAction(raw: string): Promise<ProfileState & { value?: string | null }> {
+export async function updateEfootballIdAction(raw: unknown): Promise<ProfileState & { value?: string | null }> {
   const userId = await requireUserId();
-  const r = await setEfootballId(userId, raw);
+  const r = await setEfootballId(userId, typeof raw === "string" ? raw : "");
   if (!r.ok) return { ok: false, error: r.error };
   return { ok: true, message: r.value ? "eFootball ID saved." : "eFootball ID cleared.", value: r.value };
 }

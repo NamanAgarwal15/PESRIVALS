@@ -4,13 +4,13 @@
 // rivalry's canonical user_a / user_b, then renumbered globally so analytics
 // that key on matchNo do not collide across rivalries.
 
-import { createHash } from "node:crypto";
 import { and, asc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { matches, rivalries, userInsights, users } from "@/db/schema";
 import { toAnalyticsMatch } from "@/lib/career-stats";
-import { GEMINI_API_BASE, GEMINI_MODELS } from "@/lib/gemini-extract";
+import { geminiConfigured, generateGemini } from "@/lib/gemini-text";
+import { sha256Hex } from "@/lib/hash";
 import { GLICKO_START, type Glicko, computeTilt, glicko2Update } from "@/lib/predictive-analytics";
 import {
   type AnalyticsMatch,
@@ -192,7 +192,7 @@ export const MIN_MATCHES_FOR_AI = 3;
 export const AVOID_WINDOW_DAYS = 7;
 
 export function snapshotHash(userId: string, confirmedCount: number, latestMatchId: string | null): string {
-  return createHash("sha256").update(`${userId}:${confirmedCount}:${latestMatchId ?? "none"}`).digest("hex");
+  return sha256Hex(`${userId}:${confirmedCount}:${latestMatchId ?? "none"}`);
 }
 
 /** Strip angle brackets and control characters; collapse spaces; cap length. Applied to names and AI output. */
@@ -202,7 +202,7 @@ export function sanitizeText(raw: string, max = 40): string {
 
 const stamp = () => new Date().toISOString();
 const mk = (title: string, body: string, category: InsightCategory): Insight => ({
-  id: createHash("sha256").update(title).digest("hex").slice(0, 12),
+  id: sha256Hex(title).slice(0, 12),
   title: sanitizeText(title, 90),
   body: sanitizeText(body, 320),
   category,
@@ -326,13 +326,7 @@ const aiSchema = z.object({
     .max(5),
 });
 
-function keys(): string[] {
-  return [process.env.GEMINI_API_KEY_1, process.env.GEMINI_API_KEY_2].map((k) => k?.trim() ?? "").filter(Boolean);
-}
-
-export function aiConfigured(): boolean {
-  return keys().length > 0;
-}
+export const aiConfigured = geminiConfigured;
 
 /** Calls Gemini once per key/model until one answers. Returns null on any failure. */
 export async function generateAiInsights(
@@ -366,34 +360,21 @@ AVOID: ${JSON.stringify(avoidTitles.slice(0, 30).map((t) => sanitizeText(t, 90))
       },
     },
   });
-  const deadline = Date.now() + 20_000;
-  for (const model of GEMINI_MODELS) {
-    for (const key of keys()) {
-      const left = deadline - Date.now();
-      if (left < 1000) return null;
+  const avoid = new Set(avoidTitles.map((t) => t.toLowerCase()));
+  return generateGemini(
+    body,
+    (text) => {
       try {
-        const res = await fetcher(`${GEMINI_API_BASE}/${model}:generateContent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-          body,
-          signal: AbortSignal.timeout(Math.min(10_000, left)),
-        });
-        if (!res.ok) continue;
-        const payload = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-        const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
         const parsed = aiSchema.safeParse(JSON.parse(text.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "")));
-        if (!parsed.success) continue;
-        const avoid = new Set(avoidTitles.map((t) => t.toLowerCase()));
-        const list = parsed.data.insights
-          .map((i) => mk(i.title, i.body, i.category))
-          .filter((i) => !avoid.has(i.title.toLowerCase()));
-        if (list.length) return list.slice(0, 3);
+        if (!parsed.success) return null;
+        const list = parsed.data.insights.map((i) => mk(i.title, i.body, i.category)).filter((i) => !avoid.has(i.title.toLowerCase()));
+        return list.length ? list.slice(0, 3) : null;
       } catch {
-        // try the next key/model
+        return null;
       }
-    }
-  }
-  return null;
+    },
+    fetcher,
+  );
 }
 
 export type InsightsResult = { insights: Insight[]; source: "ai" | "deterministic"; cached: boolean };

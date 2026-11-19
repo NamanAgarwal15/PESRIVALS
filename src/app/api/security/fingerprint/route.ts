@@ -1,13 +1,13 @@
 import { checkDeviceAnomalies, recordDeviceSession } from "@/lib/anti-sybil";
 import { normalizeFingerprintHash } from "@/lib/fingerprint";
-import { pushJson, pushUser } from "@/lib/push-route";
+import { apiUser, noStoreJson as pushJson } from "@/lib/api-guard";
 import { clientIpFromHeaders, consumeRateLimit } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
 // Silent device check-in. Never blocks the user: failures return a quiet 2xx/5xx
 // and the client ignores them.
 export async function POST(request: Request) {
-  const who = await pushUser(request, true);
+  const who = await apiUser(request, true);
   if ("error" in who) return who.error;
   try {
     const rl = await consumeRateLimit(`fp:${who.userId}`, 30, 60);

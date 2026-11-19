@@ -1,13 +1,13 @@
-import { auth } from "@/auth";
+import { apiUser, noStoreJson } from "@/lib/api-guard";
 import { buildUserExport } from "@/lib/account";
 import { securityLog } from "@/lib/security-log";
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) return Response.json({ ok: false, error: "Log in first." }, { status: 401 });
+export async function GET(request: Request) {
+  const who = await apiUser(request, false);
+  if ("error" in who) return who.error;
   try {
-    const data = await buildUserExport(session.user.id);
-    if (!data) return Response.json({ ok: false, error: "Not found" }, { status: 404 });
+    const data = await buildUserExport(who.userId);
+    if (!data) return noStoreJson({ ok: false, error: "Not found" }, 404);
     return new Response(JSON.stringify(data, null, 2), {
       headers: {
         "Content-Type": "application/json",
@@ -17,6 +17,6 @@ export async function GET() {
     });
   } catch (err) {
     securityLog("request_failed", { route: "export", error: err instanceof Error ? err.name : "unknown" }, "error");
-    return Response.json({ ok: false, error: "Could not build the export." }, { status: 503 });
+    return noStoreJson({ ok: false, error: "Could not build the export." }, 503);
   }
 }

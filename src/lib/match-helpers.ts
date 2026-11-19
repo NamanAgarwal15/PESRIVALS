@@ -308,7 +308,7 @@ export async function disputeMatch(
   const row = await loadMatchForActor(actorId, isAdmin, matchId);
   if (!row) return { ok: false, error: "Match not found" };
   if (row.status !== "confirmed") return { ok: false, error: "Only a confirmed match can be disputed" };
-  const note = reason?.trim().slice(0, 200) || null;
+  const note = typeof reason === "string" ? reason.trim().slice(0, 200) || null : null;
   await db
     .update(matches)
     .set({

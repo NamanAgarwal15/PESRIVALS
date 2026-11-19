@@ -1,4 +1,4 @@
-import { auth } from "@/auth";
+import { apiUser } from "@/lib/api-guard";
 import type { IngestFailureCode } from "@/lib/ingestors/types";
 import { detectImageType } from "@/lib/image-bytes";
 import { extractForMember } from "@/lib/match-helpers";
@@ -38,18 +38,19 @@ export async function POST(
   request: Request,
   context: RouteContext<"/api/rivalry/[id]/extract">,
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return fail("Log in to add a match.", 401);
-  if (!session.user.onboarded) return fail("Finish setting up your account first.", 403);
+  // Signed in and not suspended (checked in the database: this route spends Gemini quota).
+  const who = await apiUser(request, false);
+  if ("error" in who) return who.error;
+  if (!who.onboarded) return fail("Finish setting up your account first.", 403);
 
   // Rate limit: max 20 uploads per hour per user.
   const rl = await consumeRateLimit(
-    `extract:${session.user.id}`,
+    `extract:${who.userId}`,
     LIMITS.matchExtract.max,
     LIMITS.matchExtract.windowMinutes,
   );
   if (!rl.ok) {
-    securityLog("rate_limited", { route: "extract", userId: session.user.id });
+    securityLog("rate_limited", { route: "extract", userId: who.userId });
     return fail("Too many uploads. Try again in about an hour.", 429);
   }
 
@@ -93,7 +94,7 @@ export async function POST(
 
   const { id } = await context.params;
   try {
-    const result = await extractForMember(session.user.id, id, { bytes });
+    const result = await extractForMember(who.userId, id, { bytes });
     if (!result.ok) return fail(result.error, STATUS[result.code]);
     return json({ ok: true, extracted: result.extracted, confidence: result.confidence }, 200);
   } catch (err) {

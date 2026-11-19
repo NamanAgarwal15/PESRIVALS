@@ -305,7 +305,14 @@ export function ProfilePanel({
                 checked={visible}
                 onChange={(e) => {
                   setVisible(e.target.checked);
-                  start(() => void setProfileVisibilityAction(e.target.checked));
+                  const next = e.target.checked;
+                  start(async () => {
+                    try {
+                      await setProfileVisibilityAction(next);
+                    } catch {
+                      setVisible(!next); // the save failed: put the checkbox back
+                    }
+                  });
                 }}
                 className="mt-1 h-4 w-4 accent-(--primary)"
               />

@@ -90,7 +90,8 @@ export async function applyProfileChange(
 export const EFOOTBALL_ID_MAX = 24;
 
 /** Trimmed; letters, digits and hyphens; empty clears it. Returns null to clear. */
-export function parseEfootballId(raw: string): { ok: true; value: string | null } | { ok: false; error: string } {
+export function parseEfootballId(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (typeof raw !== "string") return { ok: false, error: "Enter your eFootball ID as text." };
   const v = raw.trim();
   if (v === "") return { ok: true, value: null };
   if (v.length > EFOOTBALL_ID_MAX || !/^[A-Za-z0-9-]+$/.test(v)) {

@@ -5,7 +5,6 @@
 import type { ExtractedMatch, ExtractedSide } from "@/lib/match-schema";
 import { STAT_KEYS, STAT_LABELS } from "@/lib/match-stats";
 
-export type Confidence = "green" | "yellow";
 export type FieldKey = "goals" | (typeof STAT_KEYS)[number];
 export type Side = "left" | "right";
 

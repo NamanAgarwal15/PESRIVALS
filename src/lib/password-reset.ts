@@ -2,16 +2,15 @@
 // hashes, single-use, expiring after 15 minutes. Framework-free (no next/*
 // imports) so it can be exercised directly by Vitest.
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { sha256Hex as sha256 } from "@/lib/hash";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { passwordResetTokens, users } from "@/db/schema";
 
 export const RESET_TOKEN_MINUTES = 15;
 
-export function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
+export { sha256 };
 
 export type ResetRequestResult =
   | { ok: true; userId: string; email: string | null; token: string }

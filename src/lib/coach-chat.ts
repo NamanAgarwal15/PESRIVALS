@@ -9,7 +9,7 @@
 
 import { z } from "zod";
 import { type CareerLab, aiConfigured, computeCareerLab, loadCareerData, sanitizeText } from "@/lib/career-lab";
-import { GEMINI_API_BASE, GEMINI_MODELS } from "@/lib/gemini-extract";
+import { generateGemini } from "@/lib/gemini-text";
 import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
@@ -26,7 +26,7 @@ const MAX_REPLY_CHARS = 1200;
 
 /** Angle brackets and ASCII control characters become spaces; whitespace collapses. */
 export function stripUnsafe(raw: string): string {
-  return raw.replace(/[<>\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return sanitizeText(raw, Number.MAX_SAFE_INTEGER);
 }
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -166,34 +166,9 @@ export function cleanModelReply(raw: string): string {
   return text;
 }
 
-function keys(): string[] {
-  return [process.env.GEMINI_API_KEY_1, process.env.GEMINI_API_KEY_2].map((k) => k?.trim() ?? "").filter(Boolean);
-}
-
 export async function generateCoachReply(input: ChatInput, context: unknown, fetcher: typeof fetch = fetch): Promise<string | null> {
   const body = JSON.stringify(buildGeminiRequest(input, context));
-  const deadline = Date.now() + 20_000;
-  for (const model of GEMINI_MODELS) {
-    for (const key of keys()) {
-      const left = deadline - Date.now();
-      if (left < 1000) return null;
-      try {
-        const res = await fetcher(`${GEMINI_API_BASE}/${model}:generateContent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-          body,
-          signal: AbortSignal.timeout(Math.min(10_000, left)),
-        });
-        if (!res.ok) continue;
-        const payload = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-        const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-        if (text.trim()) return cleanModelReply(text);
-      } catch {
-        // next key / model
-      }
-    }
-  }
-  return null;
+  return generateGemini(body, (text) => (text.trim() ? cleanModelReply(text) : null), fetcher);
 }
 
 // ---------------------------------------------------------------------------

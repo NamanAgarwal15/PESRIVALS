@@ -1,7 +1,7 @@
 // Anti-sybil anomaly detector. It only RAISES FLAGS for admin review: it never
 // blocks, bans or hides anything automatically. Framework-free.
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "@/lib/hash";
 import { and, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { deviceSessions, matches, rivalries, sybilFlags } from "@/db/schema";
@@ -17,7 +17,7 @@ export const FARM_MIN_AVG_MARGIN = 4;
 export function hashIp(ip: string | null): string | null {
   if (!ip) return null;
   const salt = process.env.AUTH_SECRET ?? "dev-salt";
-  return createHash("sha256").update(`${salt}:${ip}`).digest("hex");
+  return sha256Hex(`${salt}:${ip}`);
 }
 
 /** Upserts the (user, device) row. Returns nothing; never throws to callers that wrap it. */

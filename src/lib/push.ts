@@ -150,11 +150,7 @@ export async function hasSubscription(userId: string, endpoint?: string): Promis
 export type PushPayload = { title: string; body: string; url: string; tag?: string };
 
 export function isPushConfigured(): boolean {
-  return Boolean(
-    process.env.VAPID_PUBLIC_KEY?.trim() &&
-      process.env.VAPID_PRIVATE_KEY?.trim() &&
-      process.env.VAPID_SUBJECT?.trim(),
-  );
+  return vapidDetails() !== null;
 }
 
 /** Only same-site paths may be a notification target. */
@@ -167,16 +163,18 @@ type Sender = (
   body: string,
 ) => Promise<unknown>;
 
-const defaultSender: Sender = (sub, body) =>
-  webpush.sendNotification(sub, body, {
-    TTL: 60 * 60 * 24,
-    urgency: "high",
-    vapidDetails: {
-      subject: process.env.VAPID_SUBJECT!.trim(),
-      publicKey: process.env.VAPID_PUBLIC_KEY!.trim(),
-      privateKey: process.env.VAPID_PRIVATE_KEY!.trim(),
-    },
-  });
+function vapidDetails() {
+  const subject = process.env.VAPID_SUBJECT?.trim();
+  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
+  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+  return subject && publicKey && privateKey ? { subject, publicKey, privateKey } : null;
+}
+
+const defaultSender: Sender = async (sub, body) => {
+  const vapid = vapidDetails();
+  if (!vapid) throw new Error("VAPID is not configured");
+  return webpush.sendNotification(sub, body, { TTL: 60 * 60 * 24, urgency: "high", vapidDetails: vapid });
+};
 
 /** Pushes to every device of `userId`. Prunes 404/410 endpoints. Never throws. */
 export async function sendPushToUser(

@@ -2,7 +2,7 @@
 // SHA-256 of the image bytes, so re-uploading the same file never calls
 // Gemini again. Per server instance and best effort; nothing is persisted.
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "@/lib/hash";
 import type { IngestResult } from "@/lib/ingestors/types";
 
 type Ok = Extract<IngestResult, { ok: true }>;
@@ -12,9 +12,7 @@ export const EXTRACT_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const store = new Map<string, { at: number; value: Ok }>();
 
-export function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
+export { sha256Hex };
 
 export function getCachedExtraction(hash: string, now = Date.now()): Ok | null {
   const hit = store.get(hash);

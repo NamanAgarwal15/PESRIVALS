@@ -20,10 +20,16 @@ export type LeaderboardRow = {
   passAccuracy: number | null;
 };
 
-export type CareerMatch = typeof matches.$inferSelect & { userAId: string; userBId: string };
+/** A confirmed match row tagged with its rivalry's two users (not yet oriented to a viewer). */
+export type ActiveMatchRow = typeof matches.$inferSelect & { userAId: string; userBId: string };
+
+// Safety ceilings so one request can never load an unbounded table into memory.
+// Far above today's volume; if they are ever hit, move the aggregation into SQL.
+export const LEADERBOARD_MAX_MATCHES = 100_000;
+export const LEADERBOARD_MAX_USERS = 20_000;
 
 /** Every confirmed match of every active rivalry, tagged with the rivalry's two users. */
-export async function loadActiveMatches(): Promise<CareerMatch[]> {
+export async function loadActiveMatches(): Promise<ActiveMatchRow[]> {
   // matches have no direct user columns: orientation comes from the rivalry.
   const joined = await db
     .select({ match: matches, userAId: rivalries.userAId, userBId: rivalries.userBId })
@@ -31,12 +37,13 @@ export async function loadActiveMatches(): Promise<CareerMatch[]> {
     .innerJoin(rivalries, eq(matches.rivalryId, rivalries.id))
     .where(
       and(eq(matches.status, "confirmed"), eq(rivalries.status, "active"), isNull(matches.deletedAt)),
-    );
+    )
+    .limit(LEADERBOARD_MAX_MATCHES);
   return joined.map((j) => ({ ...j.match, userAId: j.userAId, userBId: j.userBId }));
 }
 
 /** Aggregated career numbers for one user across ALL of their rivalries. */
-export function summarizeCareer(userId: string, allMatches: CareerMatch[]) {
+export function summarizeCareer(userId: string, allMatches: ActiveMatchRow[]) {
   const oriented = allMatches
     .filter((m) => m.userAId === userId || m.userBId === userId)
     .map((m) => toAnalyticsMatch(m, userId, m.userAId === userId));
@@ -66,7 +73,8 @@ export async function getLeaderboard(): Promise<LeaderboardRow[]> {
   const eligible = await db
     .select({ id: users.id, username: users.username, displayName: users.displayName })
     .from(users)
-    .where(eq(users.suspended, false));
+    .where(eq(users.suspended, false))
+    .limit(LEADERBOARD_MAX_USERS);
   const allMatches = await loadActiveMatches();
 
   const rows: Omit<LeaderboardRow, "rank">[] = eligible.map((u) => ({

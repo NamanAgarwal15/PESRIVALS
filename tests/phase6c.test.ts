@@ -264,7 +264,9 @@ describe("static safety checks", () => {
     const route = readFileSync("src/app/api/coach/chat/route.ts", "utf8");
     expect(route).toContain("validateChatBody");
     expect(route).toContain("checkCoachLimits");
-    expect(route).toContain("refreshSessionUser");
-    expect(route).toContain("sameOrigin");
+    expect(route).toContain("apiUser"); // same-origin + session + DB suspension check
+    const guard = readFileSync("src/lib/api-guard.ts", "utf8");
+    expect(guard).toContain("sameOrigin");
+    expect(guard).toContain("refreshSessionUser");
   });
 });

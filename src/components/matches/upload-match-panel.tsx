@@ -1,11 +1,13 @@
 "use client";
 
-import { type ReactNode, useId, useRef, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PanelError, PillGroup, SideHeading, Choice } from "@/components/matches/upload-parts";
+import { type Host, UPLOAD_LIMIT_BYTES, readRememberedHost, rememberHost, shrinkIfLarge } from "@/components/matches/upload-helpers";
 import type { ConfidenceReport } from "@/lib/confidence";
 import { MATCH_CONTEXTS, type MatchContextTag, PLAYSTYLES, type Playstyle } from "@/lib/match-context";
 import { saveExtractedMatch } from "@/lib/match-actions";
@@ -18,59 +20,8 @@ import {
 } from "@/lib/match-stats";
 
 type Side = "left" | "right";
-type Host = "home" | "away";
 
 const ACCEPT = SCREENSHOT_MIME_TYPES.join(",");
-// Vercel rejects request bodies over 4.5 MB (before our route runs), so every
-// phone-sized screenshot is re-encoded in the browser: max 1600px, JPEG 0.85.
-const DOWNSCALE_ABOVE_BYTES = 1 * 1024 * 1024;
-const DOWNSCALE_MAX_EDGE = 1600;
-const UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
-
-// Remembers the last host (Me / Rival) per rivalry for the rest of the day, so
-// back-to-back games default automatically. Best effort: storage may be blocked.
-const hostKey = (rivalryId: string) => `pesrivals:lastHost:${rivalryId}`;
-const today = () => new Date().toLocaleDateString("en-CA");
-
-function readRememberedHost(rivalryId: string): Host | null {
-  try {
-    const raw = JSON.parse(localStorage.getItem(hostKey(rivalryId)) ?? "null") as { host?: string; date?: string } | null;
-    if (raw?.date === today() && (raw.host === "home" || raw.host === "away")) return raw.host;
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function rememberHost(rivalryId: string, host: Host) {
-  try {
-    localStorage.setItem(hostKey(rivalryId), JSON.stringify({ host, date: today() }));
-  } catch {
-    // ignore
-  }
-}
-
-async function shrinkIfLarge(file: File): Promise<File> {
-  if (file.size <= DOWNSCALE_ABOVE_BYTES) return file;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, DOWNSCALE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.85),
-    );
-    if (blob && blob.size < file.size) {
-      return new File([blob], "screenshot.jpg", { type: "image/jpeg" });
-    }
-  } catch {
-    // Fall through and upload the original.
-  }
-  return file;
-}
 
 export function UploadMatchPanel({
   rivalryId,
@@ -387,102 +338,5 @@ export function UploadMatchPanel({
         ) : null}
       </CardContent>
     </Card>
-  );
-}
-
-function PillGroup<T extends string>({
-  legend,
-  options,
-  value,
-  onChange,
-  disabled,
-}: {
-  legend: string;
-  options: readonly T[];
-  value: T | null;
-  onChange: (value: T | null) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <fieldset className="flex flex-col gap-2" disabled={disabled}>
-      <legend className="mb-1 text-sm font-medium">{legend}</legend>
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={value === option}
-            onClick={() => onChange(value === option ? null : option)}
-            className="min-h-9 rounded-full border border-input px-3 text-sm font-medium transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground disabled:opacity-50"
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-function SideHeading({ label, team }: { label: string; team: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {label}
-      </span>
-      <span className="font-heading text-xl leading-tight font-semibold break-words">
-        {team}
-      </span>
-    </div>
-  );
-}
-
-function PanelError({ children }: { children: ReactNode }) {
-  return (
-    <p
-      role="alert"
-      className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-    >
-      {children}
-    </p>
-  );
-}
-
-function Choice<T extends string>({
-  legend,
-  name,
-  value,
-  onChange,
-  options,
-  disabled,
-}: {
-  legend: string;
-  name: string;
-  value: T | null;
-  onChange: (value: T) => void;
-  options: { value: T; label: string }[];
-  disabled?: boolean;
-}) {
-  return (
-    <fieldset className="flex flex-col gap-2" disabled={disabled}>
-      <legend className="mb-2 text-sm font-medium">{legend}</legend>
-      <div className="grid grid-cols-2 gap-2">
-        {options.map((option) => (
-          <label
-            key={option.value}
-            className="flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-input px-3 py-2 text-center text-sm font-medium break-words transition-colors has-checked:border-primary has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 has-disabled:cursor-not-allowed has-disabled:opacity-50"
-          >
-            <input
-              type="radio"
-              name={name}
-              value={option.value}
-              checked={value === option.value}
-              onChange={() => onChange(option.value)}
-              className="sr-only"
-            />
-            {option.label}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }

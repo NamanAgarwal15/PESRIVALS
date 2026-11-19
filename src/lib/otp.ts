@@ -2,7 +2,8 @@
 // max 3 verification attempts, single use, max 3 sends per 15 minutes.
 // Email only (Resend). Framework-free (no next/* imports) so it is unit-tested directly.
 
-import { createHash, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
+import { sha256Hex } from "@/lib/hash";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { otpCodes, users } from "@/db/schema";
@@ -12,9 +13,7 @@ import { consumeRateLimit, LIMITS } from "@/lib/rate-limit";
 export const OTP_MINUTES = 10;
 export const OTP_MAX_ATTEMPTS = 3;
 
-export function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
+export { sha256Hex };
 
 export type OtpSendResult =
   | { ok: true; userId: string; code: string; delivered: "email" }
