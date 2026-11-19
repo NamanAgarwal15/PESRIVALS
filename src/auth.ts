@@ -7,13 +7,16 @@ import {
   getAuthUserById,
   isGoogleEnabled,
   isGoogleIdentitySuspended,
+  needsRevalidation,
   refreshSessionUser,
   resolveGoogleUser,
   verifyCredentials,
 } from "@/lib/auth-helpers";
 import { verifyOtp } from "@/lib/otp";
+import { securityLog } from "@/lib/security-log";
 
-const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60;
+const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+const isProd = process.env.NODE_ENV === "production";
 
 function applyUser(token: JWT, user: AuthUser): JWT {
   token.sub = user.id;
@@ -26,12 +29,21 @@ function applyUser(token: JWT, user: AuthUser): JWT {
   token.role = user.role;
   token.suspended = user.suspended;
   token.publicLeaderboard = user.publicLeaderboard;
+  token.lastCheckedAt = Date.now();
   return token;
 }
 
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   // JWT sessions only: no database adapter. AUTH_SECRET is read from the env.
-  session: { strategy: "jwt", maxAge: THIRTY_DAYS_IN_SECONDS },
+  session: { strategy: "jwt", maxAge: SEVEN_DAYS_IN_SECONDS },
+  // A07: explicit hardened session cookie (__Secure- prefix, Secure, httpOnly, SameSite=Lax).
+  useSecureCookies: isProd,
+  cookies: {
+    sessionToken: {
+      name: isProd ? "__Secure-authjs.session-token" : "authjs.session-token",
+      options: { httpOnly: true, sameSite: "lax", path: "/", secure: isProd },
+    },
+  },
   pages: { signIn: "/login", error: "/login" },
   providers: [
     Credentials({
@@ -90,13 +102,15 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
     // Suspended accounts can never start a Google sign-in.
     async signIn({ account, profile }) {
       if (account?.provider !== "google") return true;
-      return !(await isGoogleIdentitySuspended({
+      const suspended = await isGoogleIdentitySuspended({
         sub: account.providerAccountId,
         email: profile?.email,
         emailVerified: profile?.email_verified === true,
-      }));
+      });
+      if (suspended) securityLog("auth_blocked", { provider: "google", reason: "suspended" });
+      return !suspended;
     },
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user, account, profile, trigger }) {
       if (account?.provider === "google") {
         // Map the Google identity to our own user row (link or create).
         const dbUser = await resolveGoogleUser({
@@ -106,7 +120,10 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
           name: profile?.name,
           picture: typeof profile?.picture === "string" ? profile.picture : null,
         });
-        if (dbUser.suspended) return null;
+        if (dbUser.suspended) {
+          securityLog("auth_blocked", { provider: "google", reason: "suspended", userId: dbUser.id });
+          return null;
+        }
         return applyUser(token, dbUser);
       }
 
@@ -116,7 +133,10 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       ) {
         // Role/suspension come from the database, never from the sign-in payload.
         const fresh = await getAuthUserById(user.id);
-        if (fresh?.suspended) return null;
+        if (fresh?.suspended) {
+          securityLog("auth_blocked", { provider: account.provider, reason: "suspended", userId: fresh.id });
+          return null;
+        }
         if (fresh) return applyUser(token, fresh);
         return applyUser(token, {
           id: user.id,
@@ -130,12 +150,17 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
         });
       }
 
-      // Every later request (and unstable_update): re-read the account from the
-      // database. A deleted or suspended user gets no session (null), so an
-      // admin suspension locks the user out on their next request.
+      // Later requests: re-read suspended/role from the database at most once
+      // per REVALIDATE_AFTER_SECONDS (and always on unstable_update). A deleted
+      // or suspended user gets no session (null) once the window lapses.
       if (token.id) {
+        if (trigger !== "update" && !needsRevalidation(token.lastCheckedAt)) return token;
         const fresh = await refreshSessionUser(token.id);
-        return fresh ? applyUser(token, fresh) : null;
+        if (!fresh) {
+          securityLog("auth_blocked", { reason: "session_revoked", userId: token.id }, "info");
+          return null;
+        }
+        return applyUser(token, fresh);
       }
 
       return token;

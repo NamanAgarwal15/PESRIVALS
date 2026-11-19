@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
+import { sendPushToUser } from "@/lib/push";
 import { z } from "zod";
 import { auth } from "@/auth";
 import {
@@ -82,7 +84,19 @@ export async function sendRivalryRequestAction(
   const target = idSchema.safeParse(field(formData, "targetUserId"));
   if (!target.success) return { ok: false, error: "User not found" };
 
-  return toState(await sendRivalryRequest(userId, target.data), "Challenge sent");
+  const result = await sendRivalryRequest(userId, target.data);
+  if (result.ok) {
+    const targetId = target.data;
+    after(() =>
+      sendPushToUser(targetId, {
+        title: "New rivalry challenge",
+        body: "Someone challenged you. Open your leaderboard to accept.",
+        url: "/leaderboard",
+        tag: "invite",
+      }),
+    );
+  }
+  return toState(result, "Challenge sent");
 }
 
 export async function respondToRivalryRequestAction(

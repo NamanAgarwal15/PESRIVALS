@@ -101,7 +101,7 @@ export async function extractForMember(
 // ---------------------------------------------------------------------------
 
 export type SaveMatchResult =
-  | { ok: true; matchId: string; matchNo: number }
+  | { ok: true; matchId: string; matchNo: number; opponentId: string }
   | { ok: false; error: string };
 
 const MATCH_NO_ATTEMPTS = 3;
@@ -158,6 +158,12 @@ export async function saveMatchForUser(
     needsReview,
     decidedOnPens,
     remark,
+    playstyleA: iAmUserA ? parsed.data.myPlaystyle : parsed.data.opponentPlaystyle,
+    playstyleB: iAmUserA ? parsed.data.opponentPlaystyle : parsed.data.myPlaystyle,
+    matchContext: parsed.data.matchContext,
+    // Penalties are the existing decidedOnPens flag; the context column mirrors it.
+    isPenalties: decidedOnPens,
+    isExtraTime: parsed.data.isExtraTime,
     ...slotColumns(iAmUserA ? "A" : "B", mine),
     ...slotColumns(iAmUserA ? "B" : "A", theirs),
   } as MatchInsert;
@@ -168,7 +174,7 @@ export async function saveMatchForUser(
         .insert(matches)
         .values(values)
         .returning({ id: matches.id, matchNo: matches.matchNo });
-      return { ok: true, matchId: row.id, matchNo: row.matchNo };
+      return { ok: true, matchId: row.id, matchNo: row.matchNo, opponentId };
     } catch (err) {
       const code = pgErrorCode(err);
       // 23505: both players saved at once and took the same match_no. Retry.
@@ -270,7 +276,9 @@ export async function getRivalryMatches(
 // Dispute / resolve
 // ---------------------------------------------------------------------------
 
-export type DisputeResult = { ok: true; rivalryId: string } | { ok: false; error: string };
+export type DisputeResult =
+  | { ok: true; rivalryId: string; /** The other rivalry members, for notifications. */ notify: string[] }
+  | { ok: false; error: string };
 
 async function loadMatchForActor(actorId: string, isAdmin: boolean, matchId: unknown) {
   if (!isUuid(actorId) || !isUuid(matchId)) return null;
@@ -309,7 +317,11 @@ export async function disputeMatch(
       ...(note ? { remark: note } : {}),
     })
     .where(and(eq(matches.id, row.id), eq(matches.status, "confirmed")));
-  return { ok: true, rivalryId: row.rivalryId };
+  return {
+    ok: true,
+    rivalryId: row.rivalryId,
+    notify: [row.userAId, row.userBId].filter((id) => id !== actorId),
+  };
 }
 
 /** A rivalry member (or admin) re-confirms a disputed match; it counts again. */
@@ -325,5 +337,9 @@ export async function resolveMatchDispute(
     .update(matches)
     .set({ status: "confirmed", needsReview: false })
     .where(and(eq(matches.id, row.id), eq(matches.status, "disputed")));
-  return { ok: true, rivalryId: row.rivalryId };
+  return {
+    ok: true,
+    rivalryId: row.rivalryId,
+    notify: [row.userAId, row.userBId].filter((id) => id !== actorId),
+  };
 }

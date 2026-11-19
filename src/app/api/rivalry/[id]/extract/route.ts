@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import type { IngestFailureCode } from "@/lib/ingestors/types";
 import { detectImageType } from "@/lib/image-bytes";
 import { extractForMember } from "@/lib/match-helpers";
+import { securityLog } from "@/lib/security-log";
 import { LIMITS, clientIpFromHeaders, consumeRateLimit } from "@/lib/rate-limit";
 
 // 5 MB upload cap, enforced on the actual bytes (not just the declaration).
@@ -48,6 +49,7 @@ export async function POST(
     LIMITS.matchExtract.windowMinutes,
   );
   if (!rl.ok) {
+    securityLog("rate_limited", { route: "extract", userId: session.user.id });
     return fail("Too many uploads. Try again in about an hour.", 429);
   }
 
@@ -59,7 +61,10 @@ export async function POST(
       LIMITS.matchExtractIp.max,
       LIMITS.matchExtractIp.windowMinutes,
     );
-    if (!ipRl.ok) return fail("Too many uploads from this network. Try again later.", 429);
+    if (!ipRl.ok) {
+      securityLog("rate_limited", { route: "extract_ip", ip });
+      return fail("Too many uploads from this network. Try again later.", 429);
+    }
   }
 
   // Multipart overhead is small; refuse clearly oversized bodies before reading them.

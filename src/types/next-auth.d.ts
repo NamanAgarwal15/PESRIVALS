@@ -28,5 +28,7 @@ declare module "next-auth/jwt" {
     role?: "user" | "admin";
     suspended?: boolean;
     publicLeaderboard?: boolean;
+    /** Epoch ms of the last database re-check of suspended/role. */
+    lastCheckedAt?: number;
   }
 }

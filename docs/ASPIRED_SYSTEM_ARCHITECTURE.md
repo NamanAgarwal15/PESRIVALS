@@ -67,7 +67,7 @@ An optional `efootball_id` profile field (9 digits, unique when set) that users 
 | Green / yellow per-field confidence: model self-reported uncertainty plus deterministic checks (shots on target > shots, successful passes > passes, possession ≠ 100, missing stats); any yellow sets `needs_review` | `Shipped (Today)` (Phase 2) |
 | Opponent Dispute flow: matches save as `confirmed` instantly; a rival or admin can flag them `disputed`, which pauses them in all W-D-L, career and leaderboard totals until a member or admin resolves them | `Shipped (Today)` (Phase 2) |
 | Single-screenshot-only ingestion. Multi-screen batch upload and video keyframe sampling are **not planned**; the Full Time stats screen stays the only input | `Decision` |
-| 1-tap match context pills (Phase 4): **Playstyle** (*Possession Game, Quick Counter, Long Ball Counter, Out Wide, Long Ball*), **Host / Session memory**, **Extra Time / Penalties**, **Match Stakes / Vibe** | `Roadmap (Future)` |
+| 1-tap match context pills (Phase 4): **Playstyle** (*Possession Game, Quick Counter, Long Ball Counter, Out Wide, Long Ball*), **Host / Session memory**, **Extra Time / Penalties**, **Match Stakes / Vibe** | `Shipped (Today)` (Phase 4; migration `0005`) |
 
 ## 3. Three-tier data-science pipeline
 
@@ -178,7 +178,7 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 ### 4.7 Engineering additions (Phases 3–5)
 
 - **Shipped (Phase 3):** leaderboard cached with `unstable_cache` (tag `leaderboard`, 60 s) and expired with `revalidateTag("leaderboard", { expire: 0 })` on match save/dispute/resolve, display-name change, and admin suspend/visibility/match-delete; in-memory SHA-256 screenshot dedup (50 entries, 1 h TTL) so a re-uploaded identical image skips Gemini; rate limiting adds a per-IP upload bucket using `x-vercel-forwarded-for`, then `x-real-ip`, then `x-forwarded-for`.
-- **Phase 4:** 60-second JWT revalidation window to cut per-request DB lookups.
+- **Shipped (Phase 4):** 60-second JWT revalidation window: `suspended` and `role` are re-read from Neon at most once per 60 s (always on sign-in and on `unstable_update`), instead of on every request.
 - **Deployment note:** keep the Vercel function region next to the Neon database. That is a Vercel/Neon dashboard setting, deliberately not hardcoded in `vercel.json` or code.
 
 ## 5. Sequenced implementation roadmap
@@ -186,5 +186,46 @@ Dead `users.phone` column and its unique/E.164 constraints; `otp_codes.channel` 
 1. **Phase 1 — Security, privacy & profile polish.** `Shipped (Today)` (commit `7873e69`). Enforce suspension in Google OAuth and JWT sessions; wire peer rivalry privacy against always-visible career profiles, with user search and challenge from the leaderboard; add optional `efootball_id`; drop the dead `users.phone` column.
 2. **Phase 2 — Ingestion trust & abstraction.** `Shipped (Today)`, plus change display name (2–50 characters). Introduce `MatchTelemetryIngestor`; add AI green/yellow confidence flags on extracted fields; add the opponent Dispute (`disputed`) flow.
 3. **Phase 3 — Tier 1B Rivalry EDA Lab & derived indices.** `Shipped (Today)`: the five derived football indices and five EDA widgets on the Bento dashboard, plus hardening (below).
-4. **Phase 4 — Match context pills & Stubborn Web Push.** Single screenshot only (no multi-screen, no video). Add 1-tap context pills at save time: Playstyle, Host / Session memory, Extra Time / Penalties, Match Stakes / Vibe. Add **Stubborn Web Push Notifications**: a Service Worker with VAPID keys, persistent alerts using `requireInteraction: true`, and a deliberately multi-step in-app opt-out (several confirmation screens) rather than one-tap disable.
+4. **Phase 4 — Match context pills & Stubborn Web Push.** `Shipped (Today)`. Single screenshot only (no multi-screen, no video). Add 1-tap context pills at save time: Playstyle, Host / Session memory, Extra Time / Penalties, Match Stakes / Vibe. Add **Stubborn Web Push Notifications**: a Service Worker with VAPID keys, persistent alerts using `requireInteraction: true`, and a deliberately multi-step in-app opt-out (several confirmation screens) rather than one-tap disable.
 5. **Phase 5 — Tier 2 & Tier 3 modeling.** Stage 3A Bivariate Poisson and EWMA forecast (N ≥ 5); Stage 3B Glicko-2, tilt detector and clash matrix (N ≥ 20); Tier 2 causal inference (N ≥ 30 tagged matches).
+
+## 6. OWASP Top 10:2025 mapping
+
+| OWASP | Control | Status |
+|---|---|---|
+| A01 Broken Access Control | Session-scoped ownership on every action; DB-checked RBAC; push endpoints must be `https`, a public host (loopback, `10.*`, `172.16–31.*`, `192.168.*`, `169.254.*`, IPv6 local and IPv4-mapped forms blocked, DNS answers checked, fail closed) and are stored under `session.user.id` only | `Shipped (Today)` (Phase 4) |
+| A02 Security Misconfiguration | HSTS, `nosniff`, strict referrer, `Permissions-Policy` (camera, microphone, geolocation, payment off), CSP with `frame-ancestors 'none'`, `worker-src 'self'`, `object-src 'none'`, `connect-src` allowlist (`next.config.ts`) | `Shipped (Today)` (Phase 4) |
+| A03 Software Supply Chain | `npm run security:audit` (`npm audit --omit=dev --audit-level=high`); lockfile committed | `Shipped (Today)` (Phase 4); findings tracked below |
+| A04 Insecure Design | Rate limits (signup, reset, OTP, invites, extraction per user and per IP, push subscribe, disputes); disputes pause stats; push keys encrypted at rest | `Shipped (Today)` |
+| A05 Injection / Misconfiguration | Zod validation on all inputs, parameterised Drizzle queries, magic-byte image checks, allowlisted match-context values | `Shipped (Today)` |
+| A07 Authentication Failures | Hardened session cookie (`__Secure-` prefix, `httpOnly`, `SameSite=Lax`, `Secure`), 7-day max age, 60 s revalidation, suspension enforced on Google and JWT, common-password blocklist on signup and reset | `Shipped (Today)` (Phase 4) |
+| A08 Integrity Failures | No client-trusted role or ownership; server recomputes review flags; service worker is same-origin only | `Shipped (Today)` |
+| A09 Logging & Alerting | `src/lib/security-log.ts`: structured JSON events (auth blocks, rate-limit hits, invalid push endpoints, push pruning, dispute activity) with secrets and PII redacted | `Shipped (Today)` (Phase 4) |
+| A10 Mishandling Exceptional Conditions | Push routes and sending fail closed with generic errors; a failed push never breaks a match save | `Shipped (Today)` (Phase 4) |
+| Phase 5 additions | Admin audit log, soft-delete matches, self-serve data export/delete, device fingerprinting / anti-Sybil | `Roadmap (Future)` |
+
+## 7. Implementation progress, known caveats & next steps (living)
+
+### Progress so far
+- **Phase 1** (`7873e69`) suspension enforcement, public profiles, peer privacy, eFootball ID, migration `0004`.
+- **Phase 2** (`810a65b`) `MatchTelemetryIngestor`, green/yellow confidence, dispute flow, display-name edit.
+- **Phase 3** (`bb5c239`) five derived indices, EDA Lab, leaderboard cache, screenshot dedup, trusted IP headers.
+- **Phase 4** 1-tap context pills (playstyles, stakes/vibe, extra time, host memory in `localStorage`), stubborn Web Push (service worker, VAPID, `requireInteraction`, AES-256-GCM key storage, 3-step opt-out), 60 s JWT revalidation, OWASP hardening, migration `0005` (applied to live Neon).
+
+### Known problems & caveats
+- Web Push does nothing until `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `PUSH_ENCRYPTION_KEY` are set in Vercel; the banner stays hidden while unconfigured. In production a missing `PUSH_ENCRYPTION_KEY` makes subscribing fail (by design). Changing the key orphans existing subscriptions.
+- iOS only delivers web push to an installed home-screen app.
+- Because of the 60 s window, a suspension or role change can take up to 60 s to reach an open session.
+- The "stubborn" banner has no dismiss button by design; users who deny permission see a "blocked" message.
+- The screenshot dedup cache is per server instance and in memory.
+- Resend still needs a verified sending domain before password reset and OTP emails reach everyone.
+- Playstyle, stakes and extra-time data is collected but not yet used by any analytics (Phase 5 inputs).
+- A re-subscribe from the same browser endpoint under another account moves that subscription to the new account.
+- `connect-src` is an allowlist but the CSP still needs `'unsafe-inline'`/`'unsafe-eval'` for scripts (Next.js); a nonce-based CSP is future work.
+- `npm run security:audit` (high and above, production deps) passes after moving the script-only `xlsx` package to devDependencies; moderate advisories in dev tooling remain.
+
+### Planned next steps
+1. Set the four env vars in Vercel and redeploy; test push on Android Chrome and desktop.
+2. Verify a Resend sending domain.
+3. Phase 5: Stage 3A/3B forecasting, Tier 2 causal inference using the tagged matches, admin audit log, soft-delete matches, data export/delete, anti-Sybil checks.
+4. Nonce-based CSP and an `npm audit` clean-up pass.

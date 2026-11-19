@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ConfidenceReport } from "@/lib/confidence";
+import { MATCH_CONTEXTS, type MatchContextTag, PLAYSTYLES, type Playstyle } from "@/lib/match-context";
 import { saveExtractedMatch } from "@/lib/match-actions";
 import type { ExtractedMatch } from "@/lib/match-schema";
 import {
@@ -25,6 +26,29 @@ const ACCEPT = SCREENSHOT_MIME_TYPES.join(",");
 const DOWNSCALE_ABOVE_BYTES = 1 * 1024 * 1024;
 const DOWNSCALE_MAX_EDGE = 1600;
 const UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
+
+// Remembers the last host (Me / Rival) per rivalry for the rest of the day, so
+// back-to-back games default automatically. Best effort: storage may be blocked.
+const hostKey = (rivalryId: string) => `pesrivals:lastHost:${rivalryId}`;
+const today = () => new Date().toLocaleDateString("en-CA");
+
+function readRememberedHost(rivalryId: string): Host | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(hostKey(rivalryId)) ?? "null") as { host?: string; date?: string } | null;
+    if (raw?.date === today() && (raw.host === "home" || raw.host === "away")) return raw.host;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function rememberHost(rivalryId: string, host: Host) {
+  try {
+    localStorage.setItem(hostKey(rivalryId), JSON.stringify({ host, date: today() }));
+  } catch {
+    // ignore
+  }
+}
 
 async function shrinkIfLarge(file: File): Promise<File> {
   if (file.size <= DOWNSCALE_ABOVE_BYTES) return file;
@@ -65,10 +89,15 @@ export function UploadMatchPanel({
   const [mySide, setMySide] = useState<Side | null>(null);
   const [host, setHost] = useState<Host | null>(null);
   const [decidedOnPens, setDecidedOnPens] = useState(false);
+  const [extraTime, setExtraTime] = useState(false);
+  const [myPlaystyle, setMyPlaystyle] = useState<Playstyle | null>(null);
+  const [oppPlaystyle, setOppPlaystyle] = useState<Playstyle | null>(null);
+  const [context, setContext] = useState<MatchContextTag | null>(null);
   const [remark, setRemark] = useState("");
   const [saving, startSaving] = useTransition();
   const pensId = useId();
   const remarkId = useId();
+  const extraId = useId();
 
   function reset() {
     setExtracted(null);
@@ -76,6 +105,10 @@ export function UploadMatchPanel({
     setMySide(null);
     setHost(null);
     setDecidedOnPens(false);
+    setExtraTime(false);
+    setMyPlaystyle(null);
+    setOppPlaystyle(null);
+    setContext(null);
     setRemark("");
     setError(null);
   }
@@ -115,6 +148,7 @@ export function UploadMatchPanel({
       if (result?.ok) {
         reset();
         setExtracted(result.extracted);
+        setHost(readRememberedHost(rivalryId));
         setConfidence(result.confidence ?? null);
       } else {
         setError(result?.error ?? "Could not read that screenshot. Please try again.");
@@ -138,8 +172,13 @@ export function UploadMatchPanel({
         decidedOnPens,
         remark,
         needsReview: confidence?.hasYellow ?? false,
+        myPlaystyle,
+        opponentPlaystyle: oppPlaystyle,
+        matchContext: context,
+        isExtraTime: extraTime || decidedOnPens,
       });
       if (result.ok) {
+        rememberHost(rivalryId, host);
         toast.success(`Match #${result.matchNo} saved`);
         reset();
       } else {
@@ -287,7 +326,10 @@ export function UploadMatchPanel({
             type="checkbox"
             checked={decidedOnPens}
             disabled={saving}
-            onChange={(event) => setDecidedOnPens(event.target.checked)}
+            onChange={(event) => {
+              setDecidedOnPens(event.target.checked);
+              if (event.target.checked) setExtraTime(true); // penalties imply extra time
+            }}
             className="mt-0.5 size-5 shrink-0 accent-primary"
           />
           <div className="flex flex-col gap-1">
@@ -297,6 +339,22 @@ export function UploadMatchPanel({
             </p>
           </div>
         </div>
+
+        <div className="flex items-start gap-3">
+          <input
+            id={extraId}
+            type="checkbox"
+            checked={extraTime || decidedOnPens}
+            disabled={saving || decidedOnPens}
+            onChange={(event) => setExtraTime(event.target.checked)}
+            className="mt-0.5 size-5 shrink-0 accent-primary"
+          />
+          <Label htmlFor={extraId}>Went to extra time</Label>
+        </div>
+
+        <PillGroup legend="Your playstyle (optional)" options={PLAYSTYLES} value={myPlaystyle} onChange={setMyPlaystyle} disabled={saving} />
+        <PillGroup legend={`@${opponentUsername}'s playstyle (optional)`} options={PLAYSTYLES} value={oppPlaystyle} onChange={setOppPlaystyle} disabled={saving} />
+        <PillGroup legend="Match stakes / vibe (optional)" options={MATCH_CONTEXTS} value={context} onChange={setContext} disabled={saving} />
 
         <div className="flex flex-col gap-2">
           <Label htmlFor={remarkId}>Remark (optional)</Label>
@@ -329,6 +387,39 @@ export function UploadMatchPanel({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function PillGroup<T extends string>({
+  legend,
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  legend: string;
+  options: readonly T[];
+  value: T | null;
+  onChange: (value: T | null) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2" disabled={disabled}>
+      <legend className="mb-1 text-sm font-medium">{legend}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            onClick={() => onChange(value === option ? null : option)}
+            className="min-h-9 rounded-full border border-input px-3 text-sm font-medium transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground disabled:opacity-50"
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

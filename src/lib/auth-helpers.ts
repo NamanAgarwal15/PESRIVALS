@@ -160,6 +160,30 @@ export const agreeSchema = z.literal(true, {
     "Please agree to the Terms & Privacy Policy and the public leaderboard consent.",
 });
 
+/** How long a session may go without a database re-check of suspended/role. */
+export const REVALIDATE_AFTER_SECONDS = 60;
+
+/** True when the token has never been checked or the last check is older than the window. */
+export function needsRevalidation(lastCheckedAt: number | undefined, nowMs: number = Date.now()): boolean {
+  if (typeof lastCheckedAt !== "number" || !Number.isFinite(lastCheckedAt)) return true;
+  const age = nowMs - lastCheckedAt;
+  return age < 0 || age >= REVALIDATE_AFTER_SECONDS * 1000;
+}
+
+// Small blocklist of the most reused passwords (OWASP A07). Compared lower-cased.
+const COMMON_PASSWORDS = new Set([
+  "password", "password1", "password12", "password123", "password1234", "passw0rd",
+  "12345678", "123456789", "1234567890", "12345678910", "qwerty123", "qwertyuiop",
+  "qwerty12345", "1q2w3e4r", "1q2w3e4r5t", "iloveyou1", "iloveyou123", "admin123",
+  "admin1234", "welcome1", "welcome123", "letmein123", "abc12345", "abcd1234",
+  "football1", "football123", "efootball1", "efootball123", "pesrivals1", "pesrivals123",
+  "monkey123", "dragon123", "master123", "sunshine1", "princess1", "changeme123",
+]);
+
+export function isCommonPassword(value: string): boolean {
+  return COMMON_PASSWORDS.has(value.toLowerCase());
+}
+
 /** Standalone password policy, reused by the reset-password flow. */
 export const passwordSchema = z
   .string({ error: "Enter a password" })
@@ -167,6 +191,9 @@ export const passwordSchema = z
   .max(128, "Password can be at most 128 characters")
   .refine((v) => /[a-zA-Z]/.test(v) && /[0-9]/.test(v), {
     message: "Password must include at least one letter and one number",
+  })
+  .refine((v) => !isCommonPassword(v), {
+    message: "That password is too common. Choose a less guessable one.",
   });
 
 // ---------------------------------------------------------------------------

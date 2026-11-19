@@ -216,6 +216,13 @@ export const matches = pgTable(
     decidedOnPens: boolean("decided_on_pens").notNull().default(false),
     remark: text("remark"),
 
+    // 1-tap match context (all optional).
+    playstyleA: varchar("playstyle_a", { length: 32 }),
+    playstyleB: varchar("playstyle_b", { length: 32 }),
+    isExtraTime: boolean("is_extra_time").default(false),
+    isPenalties: boolean("is_penalties").default(false),
+    matchContext: varchar("match_context", { length: 32 }),
+
     // Stats: all nullable, one column per side.
     userAPossession: smallint("user_a_possession"),
     userBPossession: smallint("user_b_possession"),
@@ -281,3 +288,17 @@ export const matches = pgTable(
     ),
   ],
 );
+
+/** Web Push subscriptions. The p256dh and auth keys are AES-256-GCM encrypted. */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dhEncrypted: text("p256dh_encrypted").notNull(),
+  authEncrypted: text("auth_encrypted").notNull(),
+  userAgent: varchar("user_agent", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+});

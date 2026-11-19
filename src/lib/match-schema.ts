@@ -3,6 +3,7 @@
 // same rules as one that came straight from Gemini.
 
 import { z } from "zod";
+import { MATCH_CONTEXTS, PLAYSTYLES } from "@/lib/match-context";
 
 // smallint columns; no real match gets anywhere near this.
 const count = z.number().int().min(0).max(2000).nullable();
@@ -66,6 +67,11 @@ export const saveMatchInputSchema = z.object({
   mySide: z.enum(["left", "right"]),
   host: z.enum(["home", "away"]),
   decidedOnPens: z.boolean().default(false),
+  // Optional 1-tap context. Anything outside the allowed lists is rejected.
+  myPlaystyle: z.enum(PLAYSTYLES).nullish().transform((v) => v ?? null),
+  opponentPlaystyle: z.enum(PLAYSTYLES).nullish().transform((v) => v ?? null),
+  matchContext: z.enum(MATCH_CONTEXTS).nullish().transform((v) => v ?? null),
+  isExtraTime: z.boolean().default(false),
   // Set by the browser when any field was yellow; the server also re-checks.
   needsReview: z.boolean().default(false),
   remark: z

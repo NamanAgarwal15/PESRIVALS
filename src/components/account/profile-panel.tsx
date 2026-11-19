@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PushSettings } from "@/components/push/push-settings";
 import { CopyButton } from "@/components/profile/copy-button";
 import { linkGoogleAction, setProfileVisibilityAction, updateDisplayNameAction } from "@/lib/auth-actions";
 import {
@@ -256,6 +257,7 @@ export function ProfilePanel({
                 : "Add an email so you can recover your account and receive login codes."}
             </p>
             <EfootballIdSection initial={efootballId} />
+            <PushSettings />
             <ChangeSection kind="password" title="Change password" hasPassword={hasPassword} />
             <ChangeSection kind="email" title={email ? "Change email" : "Add email"} />
             <label className="flex items-start gap-2 border-t border-border/50 pt-3 text-sm">
