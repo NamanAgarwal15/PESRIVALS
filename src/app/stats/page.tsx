@@ -3,6 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MatchSimulator } from "@/components/dashboard/match-simulator";
+import { RivalryCoachChat } from "@/components/dashboard/rivalry-coach-chat";
 import { CareerLabSections } from "@/components/stats/career-lab";
 import { getCareerLabPage } from "@/lib/career-lab";
 import { getCareerStats } from "@/lib/career-stats";
@@ -77,6 +79,13 @@ async function StatsContent() {
           {labPage ? (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <CareerLabSections lab={labPage.lab} insights={labPage.insights} />
+              <MatchSimulator
+                baseline={labPage.lab.summary.played >= 5 ? { lambdaMe: Math.max(0.05, labPage.lab.summary.avgGoalsFor), lambdaOpp: Math.max(0.05, labPage.lab.summary.goalsAgainst / labPage.lab.summary.played), lambda3: 0.1 } : null}
+                meName="You"
+                oppName="Rival"
+                note="Based on your career averages across all rivals."
+              />
+              <RivalryCoachChat />
             </div>
           ) : null}
           <Card>

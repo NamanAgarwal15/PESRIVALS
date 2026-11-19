@@ -12,6 +12,8 @@ export const LIMITS = {
   forgotPassword: { max: 3, windowMinutes: 15 },
   rivalryInvite: { max: 20, windowMinutes: 60 },
   matchExtract: { max: 20, windowMinutes: 60 },
+  coachUser: { max: 15, windowMinutes: 60 },
+  coachIp: { max: 40, windowMinutes: 60 },
   pushSubscribe: { max: 20, windowMinutes: 60 },
   dispute: { max: 10, windowMinutes: 60 },
   matchExtractIp: { max: 60, windowMinutes: 60 },

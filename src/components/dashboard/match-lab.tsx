@@ -4,8 +4,9 @@
 // causal inference, each showing its unlock threshold until enough matches exist.
 
 import { useMemo, useState } from "react";
+import { MatchSimulator } from "@/components/dashboard/match-simulator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { type HostSeat, STAGE_3A_MIN, STAGE_3B_MIN, TIER2_MIN_TAGGED, computeMatchLab, type AteResult } from "@/lib/predictive-analytics";
+import { type HostSeat, forecastMatch, STAGE_3A_MIN, STAGE_3B_MIN, TIER2_MIN_TAGGED, computeMatchLab, type AteResult } from "@/lib/predictive-analytics";
 import type { AnalyticsMatch } from "@/lib/rivalry-analytics";
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
@@ -37,6 +38,11 @@ export function MatchLab({ matches, meName, oppName }: { matches: AnalyticsMatch
   const [host, setHost] = useState<HostSeat>(null);
   const lab = useMemo(() => computeMatchLab(matches, host), [matches, host]);
   const f = lab.forecast;
+  // Neutral-venue baseline for the simulator (it applies host and style effects itself).
+  const simBase = useMemo(() => {
+    const b = forecastMatch(matches, null);
+    return b.unlocked ? { lambdaMe: b.lambdaMe, lambdaOpp: b.lambdaOpp, lambda3: b.lambda3 } : null;
+  }, [matches]);
   const deep = lab.deep.unlocked ? lab.deep : null;
 
   return (
@@ -159,6 +165,8 @@ export function MatchLab({ matches, meName, oppName }: { matches: AnalyticsMatch
             </>
           )}
         </section>
+
+        <MatchSimulator baseline={simBase} meName={meName} oppName={oppName} note={simBase ? undefined : "Using typical goal rates until you have 5 matches."} />
       </CardContent>
     </Card>
   );

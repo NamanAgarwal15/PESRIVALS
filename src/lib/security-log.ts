@@ -10,7 +10,8 @@ export type SecurityEvent =
   | "dispute_spike"
   | "request_failed"
   | "sybil_flag"
-  | "account_deleted";
+  | "account_deleted"
+  | "coach_injection_blocked";
 
 const SENSITIVE = /^ip$|pass|secret|token|key|code|auth|cookie|email|phone|p256dh|session/i;
 

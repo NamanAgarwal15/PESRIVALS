@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from "react";
 import { DerivedIndicesCard, EdaLab } from "@/components/dashboard/eda-lab";
+import { RivalryCoachChat } from "@/components/dashboard/rivalry-coach-chat";
 import { MatchLab } from "@/components/dashboard/match-lab";
 import { MatchList } from "@/components/matches/match-list";
 import {
@@ -335,6 +336,7 @@ export function RivalryDashboard({
           allMatches={matches}
         />
       )}
+      <RivalryCoachChat rivalryId={rivalryId} />
     </div>
   );
 }
