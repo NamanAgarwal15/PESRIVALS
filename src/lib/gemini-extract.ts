@@ -2,9 +2,10 @@
 // Framework-free (plain fetch) so Vitest can drive it with a mocked fetch.
 //
 // API keys are sent in a request header and are never logged, returned or
-// put in an error message. Log lines name keys as KEY_1 / KEY_2 only.
+// put in an error message. Log lines name keys by slot (KEY_1 .. KEY_6) only.
 
 import { z } from "zod";
+import { geminiKeyPool } from "@/lib/gemini-keys";
 import { type ConfidenceReport, assessConfidence } from "@/lib/confidence";
 import { type ExtractedMatch, extractedMatchSchema } from "@/lib/match-schema";
 import { SCREENSHOT_MAX_BYTES, STAT_KEYS } from "@/lib/match-stats";
@@ -137,12 +138,7 @@ const RESPONSE_SCHEMA = {
   required: ["is_valid_efootball_stats_screen", "rejection_reason", "left", "right"],
 };
 
-function configuredKeys(): { label: string; value: string }[] {
-  return [
-    { label: "KEY_1", value: process.env.GEMINI_API_KEY_1?.trim() ?? "" },
-    { label: "KEY_2", value: process.env.GEMINI_API_KEY_2?.trim() ?? "" },
-  ].filter((key) => key.value.length > 0);
-}
+const configuredKeys = geminiKeyPool;
 
 // ---------------------------------------------------------------------------
 // Response handling
@@ -278,7 +274,7 @@ export async function extractMatchFromScreenshot(image: {
 
   const keys = configuredKeys();
   if (!keys.length) {
-    console.error("[gemini] no GEMINI_API_KEY_1 / GEMINI_API_KEY_2 configured");
+    console.error("[gemini] no GEMINI_API_KEY_1 .. GEMINI_API_KEY_6 configured");
     return failure("not_configured", "Screenshot reading is not set up yet.");
   }
 

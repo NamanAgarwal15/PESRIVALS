@@ -6,7 +6,7 @@
 // analytics engine in rivalry-analytics.ts.
 
 import { useMemo, useState } from "react";
-import { RivalryCoachChat } from "@/components/dashboard/rivalry-coach-chat";
+import { type CoachQuotaInfo, RivalryCoachChat } from "@/components/dashboard/rivalry-coach-chat";
 import type { ChartTeams } from "@/components/dashboard/rivalry-charts";
 import { AnalysisTab } from "@/components/dashboard/analysis-tab";
 import { OverviewTab } from "@/components/dashboard/overview-tab";
@@ -87,6 +87,7 @@ type Tab = "overview" | "analysis";
 
 export function RivalryDashboard({
   rivalryId,
+  coachQuota,
   matches,
   displayMatches,
   meName,
@@ -95,6 +96,7 @@ export function RivalryDashboard({
   uploadSlot,
 }: {
   rivalryId: string;
+  coachQuota?: CoachQuotaInfo | null;
   matches: Parameters<typeof computeRivalryAnalytics>[0];
   displayMatches: RivalryMatch[];
   meName: string;
@@ -308,7 +310,7 @@ export function RivalryDashboard({
           allMatches={matches}
         />
       )}
-      <RivalryCoachChat rivalryId={rivalryId} />
+      <RivalryCoachChat rivalryId={rivalryId} initialQuota={coachQuota ?? null} />
     </div>
   );
 }

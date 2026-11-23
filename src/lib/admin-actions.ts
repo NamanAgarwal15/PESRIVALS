@@ -14,6 +14,8 @@ import {
   setSuspended,
   setTempPasswordHash,
 } from "@/lib/admin";
+import { QUOTA_BUCKETS, resetUserQuota } from "@/lib/admin-coach";
+import { z } from "zod";
 import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
 import { recordAudit } from "@/lib/audit";
 import { refreshLeaderboard } from "@/lib/leaderboard-cache";
@@ -105,5 +107,16 @@ export async function adminResolveSybilFlagAction(fd: FormData): Promise<void> {
   } else {
     await recordAudit(me, "sybil.dismiss", "sybil_flag", flagId);
   }
+  revalidatePath("/admin");
+}
+
+const quotaSchema = z.object({ userId: z.uuid(), bucket: z.enum(QUOTA_BUCKETS) });
+
+/** Reset a user's AI/extraction quota buckets (coach, extract, briefing or all). Admin only, audited. */
+export async function resetUserQuotaAction(fd: FormData): Promise<void> {
+  const me = await requireAdmin();
+  const parsed = quotaSchema.safeParse({ userId: field(fd, "userId"), bucket: field(fd, "bucket") });
+  if (!parsed.success) return;
+  await resetUserQuota(me, parsed.data.userId, parsed.data.bucket);
   revalidatePath("/admin");
 }

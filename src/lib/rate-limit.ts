@@ -11,7 +11,9 @@ export const LIMITS = {
   signup: { max: 5, windowMinutes: 15 },
   forgotPassword: { max: 3, windowMinutes: 15 },
   rivalryInvite: { max: 20, windowMinutes: 60 },
-  matchExtract: { max: 20, windowMinutes: 60 },
+  matchExtract: { max: 10, windowMinutes: 60 },
+  matchExtractDay: { max: 30, windowMinutes: 1440 },
+  coachDay: { max: 5, windowMinutes: 1440 },
   coachUser: { max: 15, windowMinutes: 60 },
   coachIp: { max: 40, windowMinutes: 60 },
   pushSubscribe: { max: 20, windowMinutes: 60 },
@@ -47,6 +49,68 @@ export async function consumeRateLimit(
   const rows = (result as unknown as { rows?: { count: number }[] }).rows ?? [];
   const count = Number(rows[0]?.count ?? 1);
   return { ok: count <= max, remaining: Math.max(0, max - count) };
+}
+
+// ---------------------------------------------------------------------------
+// UTC-day quotas (the key carries the UTC date, so a new day is a fresh bucket)
+// ---------------------------------------------------------------------------
+
+export const utcDay = (d: Date = new Date()): string => d.toISOString().slice(0, 10);
+
+/** Start of the next UTC day: when daily quotas reset. */
+export function nextUtcMidnight(d: Date = new Date()): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
+}
+
+export const dailyKey = (name: string, userId: string, day: string = utcDay()) => `${name}-day:${userId}:${day}`;
+
+/**
+ * Atomically takes one unit of a quota only if one is left; a refused attempt is NOT counted,
+ * so refundRateLimit gives back exactly what was reserved.
+ */
+export async function reserveQuota(key: string, max: number, windowMinutes: number): Promise<RateLimitResult> {
+  const bump = await db.execute(sql`
+    UPDATE rate_limits SET count = count + 1
+    WHERE key = ${key} AND count < ${max}
+      AND window_started_at >= now() - (${windowMinutes} * interval '1 minute')
+    RETURNING count
+  `);
+  let rows = (bump as unknown as { rows?: { count: number }[] }).rows ?? [];
+  if (!rows.length) {
+    // No row yet, or its window expired: start a fresh window at 1. Does nothing if the quota is spent.
+    const fresh = await db.execute(sql`
+      INSERT INTO rate_limits (key, count, window_started_at) VALUES (${key}, 1, now())
+      ON CONFLICT (key) DO UPDATE SET count = 1, window_started_at = now()
+      WHERE rate_limits.window_started_at < now() - (${windowMinutes} * interval '1 minute')
+      RETURNING count
+    `);
+    rows = (fresh as unknown as { rows?: { count: number }[] }).rows ?? [];
+  }
+  if (!rows.length) return { ok: false, remaining: 0 };
+  return { ok: true, remaining: Math.max(0, max - Number(rows[0].count)) };
+}
+
+/** Reads a bucket without counting a hit. */
+export async function peekRateLimit(key: string, max: number, windowMinutes: number): Promise<{ used: number; remaining: number }> {
+  const result = await db.execute(sql`
+    SELECT count FROM rate_limits
+    WHERE key = ${key} AND window_started_at >= now() - (${windowMinutes} * interval '1 minute')
+  `);
+  const rows = (result as unknown as { rows?: { count: number }[] }).rows ?? [];
+  const used = Number(rows[0]?.count ?? 0);
+  return { used, remaining: Math.max(0, max - used) };
+}
+
+/** Gives one hit back (used when an AI call fails after its quota was reserved). */
+export async function refundRateLimit(key: string): Promise<void> {
+  await db.execute(sql`UPDATE rate_limits SET count = GREATEST(count - 1, 0) WHERE key = ${key}`);
+}
+
+/** Deletes a user's buckets for the given names: hourly `name:userId` and daily `name-day:userId:*`. */
+export async function clearUserRateLimits(userId: string, names: string[]): Promise<void> {
+  for (const name of names) {
+    await db.execute(sql`DELETE FROM rate_limits WHERE key = ${`${name}:${userId}`} OR key LIKE ${`${name}-day:${userId}:%`}`);
+  }
 }
 
 /** Removes a rate-limit row (used by tests to clean up after themselves). */

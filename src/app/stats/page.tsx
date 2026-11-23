@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchSimulator } from "@/components/dashboard/match-simulator";
 import { RivalryCoachChat } from "@/components/dashboard/rivalry-coach-chat";
 import { CareerLabSections } from "@/components/stats/career-lab";
+import { getCoachQuota } from "@/lib/coach-chat";
 import { getCareerLabPage } from "@/lib/career-lab";
 import { getCareerStats } from "@/lib/career-stats";
 import { getSession } from "@/lib/session";
@@ -51,6 +52,7 @@ async function StatsContent() {
 
   const { overall, overallComparison, perRivalry } = stats;
   // Fail closed: if the lab or the insight cache has a problem, the classic stats still render.
+  const coachQuota = await getCoachQuota(session.user.id).catch(() => null);
   const labPage = overall.played === 0 ? null : await getCareerLabPage(session.user.id).catch(() => null);
 
   return (
@@ -85,7 +87,7 @@ async function StatsContent() {
                 oppName="Rival"
                 note="Based on your career averages across all rivals."
               />
-              <RivalryCoachChat />
+              <RivalryCoachChat initialQuota={coachQuota} />
             </div>
           ) : null}
           <Card>

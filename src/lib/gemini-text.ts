@@ -3,9 +3,11 @@
 // Keys travel in a header and are never logged or returned.
 
 import { GEMINI_API_BASE, GEMINI_MODELS } from "@/lib/gemini-extract";
+import { geminiKeyPool } from "@/lib/gemini-keys";
 
+/** Key values from the 6-slot pool (see gemini-keys.ts). */
 export function geminiKeys(): string[] {
-  return [process.env.GEMINI_API_KEY_1, process.env.GEMINI_API_KEY_2].map((k) => k?.trim() ?? "").filter(Boolean);
+  return geminiKeyPool().map((k) => k.value);
 }
 
 export function geminiConfigured(): boolean {

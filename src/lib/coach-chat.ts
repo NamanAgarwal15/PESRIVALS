@@ -10,7 +10,9 @@
 import { z } from "zod";
 import { type CareerLab, aiConfigured, computeCareerLab, loadCareerData, sanitizeText } from "@/lib/career-lab";
 import { generateGemini } from "@/lib/gemini-text";
-import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
+import { db } from "@/db";
+import { coachChatLogs } from "@/db/schema";
+import { LIMITS, consumeRateLimit, dailyKey, nextUtcMidnight, peekRateLimit, refundRateLimit, reserveQuota } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
 export const REFUSAL = "I'm your PESRIVALS tactical coach — ask me anything about your matches, playstyles, or rivalry stats.";
@@ -71,7 +73,8 @@ export function looksLikeInjection(message: string): boolean {
 export async function buildCoachContext(userId: string, rivalryId: string | null = null) {
   const { rivals, matches } = await loadCareerData(userId);
   const lab = computeCareerLab(matches, rivals);
-  return { lab, context: summarizeForCoach(lab, matches, rivalryId, rivals) };
+  const focusRivalryId = rivalryId && rivals.some((r) => r.rivalryId === rivalryId) ? rivalryId : null;
+  return { lab, focusRivalryId, context: summarizeForCoach(lab, matches, rivalryId, rivals) };
 }
 
 type CM = Awaited<ReturnType<typeof loadCareerData>>["matches"];
@@ -217,6 +220,80 @@ export async function checkCoachLimits(userId: string, ip: string | null): Promi
     }
   }
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Daily AI quota (UTC day) and exchange log
+// ---------------------------------------------------------------------------
+
+export type CoachQuota = { limit: number; remaining: number; resetsAt: string; aiEnabled: boolean };
+
+/** How many AI coach answers this user has left today (UTC). Rule-based answers are unlimited. */
+export async function getCoachQuota(userId: string): Promise<CoachQuota> {
+  const { remaining } = await peekRateLimit(dailyKey("coach", userId), LIMITS.coachDay.max, LIMITS.coachDay.windowMinutes);
+  return { limit: LIMITS.coachDay.max, remaining, resetsAt: nextUtcMidnight().toISOString(), aiEnabled: aiConfigured() };
+}
+
+/** Reserves one AI answer atomically. Call refundCoachAi if the model call then fails. */
+export async function reserveCoachAi(userId: string): Promise<boolean> {
+  return (await reserveQuota(dailyKey("coach", userId), LIMITS.coachDay.max, LIMITS.coachDay.windowMinutes)).ok;
+}
+
+export const refundCoachAi = (userId: string) => refundRateLimit(dailyKey("coach", userId));
+
+export type CoachLogInput = {
+  userId: string;
+  rivalryId: string | null;
+  userMessage: string;
+  assistantReply: string;
+  source: "ai" | "deterministic" | "guard";
+  flagReason?: string | null;
+};
+
+/** Stores one already-sanitised exchange. Never throws: logging must not break the chat. */
+export async function logCoachExchange(input: CoachLogInput): Promise<void> {
+  try {
+    await db.insert(coachChatLogs).values({
+      userId: input.userId,
+      rivalryId: input.rivalryId,
+      userMessage: stripUnsafe(input.userMessage).slice(0, MAX_MESSAGE),
+      assistantReply: stripUnsafe(input.assistantReply).slice(0, MAX_REPLY_CHARS),
+      source: input.source,
+      flagged: Boolean(input.flagReason),
+      flagReason: input.flagReason ?? null,
+    });
+  } catch (err) {
+    securityLog("request_failed", { route: "coach_log", error: err instanceof Error ? err.name : "unknown" }, "error");
+  }
+}
+
+export type CoachAnswer = {
+  reply: string;
+  source: "ai" | "deterministic" | "guard";
+  quota: CoachQuota;
+};
+
+/**
+ * One coach turn after validation and rate limits: injection guard, scoped context,
+ * AI only while today's quota lasts (refunded if the model fails), the free rule-based
+ * coach otherwise, and the exchange logged either way.
+ */
+export async function answerCoachTurn(userId: string, input: ChatInput, fetcher: typeof fetch = fetch): Promise<CoachAnswer> {
+  if (looksLikeInjection(input.message)) {
+    securityLog("coach_injection_blocked", { userId });
+    await logCoachExchange({ userId, rivalryId: null, userMessage: input.message, assistantReply: REFUSAL, source: "guard", flagReason: "injection_attempt" });
+    return { reply: REFUSAL, source: "guard", quota: await getCoachQuota(userId) };
+  }
+  const { lab, context, focusRivalryId } = await buildCoachContext(userId, input.rivalryId);
+  let ai: string | null = null;
+  if (aiConfigured() && lab.played > 0 && (await reserveCoachAi(userId))) {
+    ai = await generateCoachReply(input, context, fetcher);
+    if (ai === null) await refundCoachAi(userId);
+  }
+  const source = ai === null ? "deterministic" : "ai";
+  const reply = ai ?? deterministicCoachReply(lab, input.message);
+  await logCoachExchange({ userId, rivalryId: focusRivalryId, userMessage: input.message, assistantReply: reply, source, flagReason: source === "ai" && reply === REFUSAL ? "ai_refusal" : null });
+  return { reply, source, quota: await getCoachQuota(userId) };
 }
 
 export { aiConfigured };

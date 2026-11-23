@@ -3,7 +3,7 @@ import type { IngestFailureCode } from "@/lib/ingestors/types";
 import { detectImageType } from "@/lib/image-bytes";
 import { extractForMember } from "@/lib/match-helpers";
 import { securityLog } from "@/lib/security-log";
-import { LIMITS, clientIpFromHeaders, consumeRateLimit } from "@/lib/rate-limit";
+import { LIMITS, clientIpFromHeaders, consumeRateLimit, dailyKey } from "@/lib/rate-limit";
 
 // 5 MB upload cap, enforced on the actual bytes (not just the declaration).
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -52,6 +52,13 @@ export async function POST(
   if (!rl.ok) {
     securityLog("rate_limited", { route: "extract", userId: who.userId });
     return fail("Too many uploads. Try again in about an hour.", 429);
+  }
+
+  // Daily cap (UTC day) on top of the hourly one.
+  const day = await consumeRateLimit(dailyKey("extract", who.userId), LIMITS.matchExtractDay.max, LIMITS.matchExtractDay.windowMinutes);
+  if (!day.ok) {
+    securityLog("rate_limited", { route: "extract_day", userId: who.userId });
+    return fail("You have used today's screenshot reads. They reset at midnight UTC.", 429);
   }
 
   // Second bucket per client IP (trusted edge header first) against one IP using many accounts.

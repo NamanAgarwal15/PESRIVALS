@@ -11,6 +11,7 @@ import { matches, rivalries, userInsights, users } from "@/db/schema";
 import { toAnalyticsMatch } from "@/lib/career-stats";
 import { geminiConfigured, generateGemini } from "@/lib/gemini-text";
 import { sha256Hex } from "@/lib/hash";
+import { utcDay } from "@/lib/rate-limit";
 import { GLICKO_START, type Glicko, computeTilt, glicko2Update } from "@/lib/predictive-analytics";
 import {
   type AnalyticsMatch,
@@ -187,7 +188,7 @@ export const INSIGHT_CATEGORIES = ["form", "tactics", "rival", "mindset", "finis
 export type InsightCategory = (typeof INSIGHT_CATEGORIES)[number];
 export type Insight = { id: string; title: string; body: string; category: InsightCategory; generatedAt: string };
 
-export const AI_DAILY_CAP = 3;
+export const AI_DAILY_CAP = 1; // AI briefings per user per UTC day
 export const MIN_MATCHES_FOR_AI = 3;
 export const AVOID_WINDOW_DAYS = 7;
 
@@ -397,10 +398,10 @@ export async function getMatchdayInsights(
     .limit(1);
   if (hit) return { insights: hit.insightsJson as Insight[], source: hit.source === "ai" ? "ai" : "deterministic", cached: true };
 
-  const since24h = new Date(Date.now() - 24 * 3600_000);
+  const startOfUtcDay = new Date(`${utcDay()}T00:00:00.000Z`);
   const since7d = new Date(Date.now() - AVOID_WINDOW_DAYS * 24 * 3600_000);
   const [aiRows, recent] = await Promise.all([
-    db.select({ id: userInsights.id }).from(userInsights).where(and(eq(userInsights.userId, userId), eq(userInsights.source, "ai"), gte(userInsights.createdAt, since24h))),
+    db.select({ id: userInsights.id }).from(userInsights).where(and(eq(userInsights.userId, userId), eq(userInsights.source, "ai"), gte(userInsights.createdAt, startOfUtcDay))),
     db.select({ j: userInsights.insightsJson }).from(userInsights).where(and(eq(userInsights.userId, userId), gte(userInsights.createdAt, since7d))),
   ]);
   const avoidTitles = recent.flatMap((r) => (r.j as Insight[]).map((i) => i.title));

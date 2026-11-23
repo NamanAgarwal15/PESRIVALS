@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import {
   adminDeleteMatchAction,
   adminResolveSybilFlagAction,
+  resetUserQuotaAction,
   adminSetAnnouncementAction,
   adminSetPasswordAction,
   adminSetRoleAction,
@@ -23,6 +24,8 @@ import {
   listUsers,
 } from "@/lib/admin";
 import { listAuditLogs } from "@/lib/audit";
+import { CoachChatReader } from "@/components/admin/coach-chat-reader";
+import { getAdminCoachChatLogs } from "@/lib/admin-coach";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Admin | PESRIVALS", robots: { index: false } };
@@ -41,17 +44,22 @@ export default function AdminPage({ searchParams }: PageProps<"/admin">) {
 async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin">["searchParams"] }) {
   const session = await getSession();
   // Hidden from everyone but admins: a 404, not a "forbidden".
-  if (!(await isAdminUser(session?.user?.id))) notFound();
+  const adminId = session?.user?.id;
+  if (!adminId || !(await isAdminUser(adminId))) notFound();
 
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
-  const [stats, userRows, recent, announcement, flags, audit] = await Promise.all([
+  const chatFilter = sp.chat === "flagged" ? "flagged" : "all";
+  const chatUser = typeof sp.cu === "string" ? sp.cu.slice(0, 40) : "";
+  const chatPage = Math.max(0, Math.min(10_000, Number(typeof sp.cp === "string" ? sp.cp : 0) || 0));
+  const [stats, userRows, recent, announcement, flags, audit, chats] = await Promise.all([
     getPlatformStats(),
     listUsers(q),
     listRecentMatches(),
     getAnnouncement(),
     listOpenSybilFlags(),
     listAuditLogs(),
+    getAdminCoachChatLogs(adminId, { flaggedOnly: chatFilter === "flagged", username: chatUser, page: chatPage }),
   ]);
   const matchRows = (recent as unknown as { rows: Record<string, string | number>[] }).rows;
   const kpis: [string, number][] = [
@@ -132,6 +140,16 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                     {u.publicLeaderboard ? "Make profile private" : "Make profile visible"}
                   </Button>
                 </form>
+                <form action={resetUserQuotaAction} className="flex gap-1">
+                  <input type="hidden" name="userId" value={u.id} />
+                  <select name="bucket" aria-label="Quota to reset" defaultValue="all" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm">
+                    <option value="all">All quotas</option>
+                    <option value="coach">Coach</option>
+                    <option value="extract">Screenshots</option>
+                    <option value="briefing">Briefing</option>
+                  </select>
+                  <Button type="submit" size="sm" variant="outline">Reset quota</Button>
+                </form>
                 <form action={adminSetRoleAction}>
                   <input type="hidden" name="userId" value={u.id} />
                   <input type="hidden" name="role" value={u.role === "admin" ? "user" : "admin"} />
@@ -189,6 +207,8 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
           ))}
         </CardContent>
       </Card>
+
+      <CoachChatReader data={chats} filter={chatFilter} user={chatUser} />
 
       <Card>
         <CardHeader>

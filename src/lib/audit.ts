@@ -15,7 +15,9 @@ export type AuditAction =
   | "match.soft_delete"
   | "match.resolve_dispute"
   | "sybil.dismiss"
-  | "sybil.suspend_user";
+  | "sybil.suspend_user"
+  | "user.reset_quota"
+  | "coach.chats_viewed";
 
 export async function recordAudit(
   actorUserId: string,

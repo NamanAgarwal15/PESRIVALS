@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { UploadMatchPanel } from "@/components/matches/upload-match-panel";
 import { RivalryDashboard } from "@/components/dashboard/rivalry-dashboard";
 import { getRivalryAnalyticsMatches } from "@/lib/career-stats";
+import { getCoachQuota } from "@/lib/coach-chat";
 import { getRivalryMatches } from "@/lib/match-helpers";
 import { type RivalryOpponent, getRivalryForMember } from "@/lib/rivalry-helpers";
 import { getSession } from "@/lib/session";
@@ -43,6 +44,7 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
   if (!rivalry) notFound();
 
   const matches = await getRivalryMatches(session.user.id, rivalry.id, 200);
+  const coachQuota = await getCoachQuota(session.user.id).catch(() => null);
   const analyticsMatches = await getRivalryAnalyticsMatches(session.user.id, rivalry.id);
 
   return (
@@ -65,6 +67,7 @@ async function RivalryContent({ params }: Pick<PageProps<"/rivalry/[id]">, "para
 
       <RivalryDashboard
         rivalryId={rivalry.id}
+        coachQuota={coachQuota}
         matches={analyticsMatches}
         displayMatches={matches}
         meName={rivalry.me.displayName}

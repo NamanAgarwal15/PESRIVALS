@@ -379,3 +379,26 @@ export const userInsights = pgTable(
     uniqueIndex("user_insights_user_snapshot_idx").on(t.userId, t.snapshotHash),
   ],
 );
+
+/** Every Rivalry Coach exchange (sanitised), kept so admins can review abuse and quality. */
+export const coachChatLogs = pgTable(
+  "coach_chat_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    rivalryId: uuid("rivalry_id").references(() => rivalries.id, { onDelete: "set null" }),
+    userMessage: text("user_message").notNull(),
+    assistantReply: text("assistant_reply").notNull(),
+    // 'ai' | 'deterministic' | 'guard'
+    source: varchar("source", { length: 16 }).notNull(),
+    flagged: boolean("flagged").notNull().default(false),
+    flagReason: varchar("flag_reason", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("coach_chat_logs_user_created_idx").on(t.userId, t.createdAt),
+    index("coach_chat_logs_flagged_created_idx").on(t.flagged, t.createdAt),
+  ],
+);
