@@ -78,6 +78,13 @@
       "when": 1795444926243,
       "tag": "0010_heavy_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795457370088,
+      "tag": "0011_magical_inertia",
+      "breakpoints": true
     }
   ]
 }

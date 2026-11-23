@@ -454,3 +454,58 @@ export const messageBlocks = pgTable(
     index("message_blocks_blocked_idx").on(t.blockedId),
   ],
 );
+
+/** Global lobby chat. Short-lived: rows older than the retention window (and not under report) are pruned. */
+export const globalChatMessages = pgTable(
+  "global_chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    // Set by an admin from the report queue; hidden rows are never served.
+    hidden: boolean("hidden").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("global_chat_body_length", sql`char_length(${t.body}) BETWEEN 1 AND 300`),
+    index("global_chat_created_idx").on(t.createdAt),
+    index("global_chat_sender_created_idx").on(t.senderId, t.createdAt),
+  ],
+);
+
+/** Player reports of abusive chat messages (global lobby or 1v1 DM). Reviewed by admins only. */
+export const chatReports = pgTable(
+  "chat_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reporterId: uuid("reporter_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // The author of the reported message (denormalised for the queue).
+    reportedUserId: uuid("reported_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Exactly one of the two message ids is set.
+    globalMessageId: uuid("global_message_id").references(() => globalChatMessages.id, { onDelete: "cascade" }),
+    dmMessageId: uuid("dm_message_id").references(() => dmMessages.id, { onDelete: "cascade" }),
+    // 'spam' | 'harassment' | 'hate' | 'links' | 'other'
+    reason: varchar("reason", { length: 16 }).notNull(),
+    // 'open' | 'reviewed' | 'dismissed'
+    status: varchar("status", { length: 12 }).notNull().default("open"),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("chat_reports_one_target", sql`(${t.globalMessageId} IS NULL) <> (${t.dmMessageId} IS NULL)`),
+    check("chat_reports_reason", sql`${t.reason} IN ('spam','harassment','hate','links','other')`),
+    check("chat_reports_status", sql`${t.status} IN ('open','reviewed','dismissed')`),
+    check("chat_reports_not_self", sql`${t.reporterId} <> ${t.reportedUserId}`),
+    // One report per reporter per message: report spam is impossible.
+    unique("chat_reports_reporter_global_unique").on(t.reporterId, t.globalMessageId),
+    unique("chat_reports_reporter_dm_unique").on(t.reporterId, t.dmMessageId),
+    index("chat_reports_status_created_idx").on(t.status, t.createdAt),
+  ],
+);

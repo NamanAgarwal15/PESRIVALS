@@ -26,6 +26,8 @@ import {
 import { listAuditLogs } from "@/lib/audit";
 import { CoachChatReader } from "@/components/admin/coach-chat-reader";
 import { getAdminCoachChatLogs } from "@/lib/admin-coach";
+import { ChatReportQueue } from "@/components/admin/chat-report-queue";
+import { REPORT_STATUSES, getChatReports } from "@/lib/admin-chat";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Admin | PESRIVALS", robots: { index: false } };
@@ -52,7 +54,9 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
   const chatFilter = sp.chat === "flagged" ? "flagged" : "all";
   const chatUser = typeof sp.cu === "string" ? sp.cu.slice(0, 40) : "";
   const chatPage = Math.max(0, Math.min(10_000, Number(typeof sp.cp === "string" ? sp.cp : 0) || 0));
-  const [stats, userRows, recent, announcement, flags, audit, chats] = await Promise.all([
+  const reportStatus = (REPORT_STATUSES as readonly string[]).includes(String(sp.rs)) ? (sp.rs as (typeof REPORT_STATUSES)[number]) : sp.rs === "all" ? "all" : "open";
+  const reportPage = Math.max(0, Math.min(10_000, Number(typeof sp.rp === "string" ? sp.rp : 0) || 0));
+  const [stats, userRows, recent, announcement, flags, audit, chats, reports] = await Promise.all([
     getPlatformStats(),
     listUsers(q),
     listRecentMatches(),
@@ -60,6 +64,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
     listOpenSybilFlags(),
     listAuditLogs(),
     getAdminCoachChatLogs(adminId, { flaggedOnly: chatFilter === "flagged", username: chatUser, page: chatPage }),
+    getChatReports(adminId, { status: reportStatus, page: reportPage }),
   ]);
   const matchRows = (recent as unknown as { rows: Record<string, string | number>[] }).rows;
   const kpis: [string, number][] = [
@@ -209,6 +214,8 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
       </Card>
 
       <CoachChatReader data={chats} filter={chatFilter} user={chatUser} />
+
+      <ChatReportQueue data={reports} status={reportStatus} />
 
       <Card>
         <CardHeader>

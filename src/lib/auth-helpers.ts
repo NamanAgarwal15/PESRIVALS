@@ -29,6 +29,8 @@ const DUMMY_PASSWORD_HASH =
 
 export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
   "admin",
+  "global",
+  "lobby",
   "api",
   "app",
   "auth",

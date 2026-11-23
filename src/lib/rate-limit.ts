@@ -22,6 +22,11 @@ export const LIMITS = {
   dmUser: { max: 20, windowMinutes: 5 },
   dmIp: { max: 60, windowMinutes: 5 },
   dmRead: { max: 240, windowMinutes: 10 },
+  globalUser: { max: 12, windowMinutes: 2 },
+  globalIp: { max: 40, windowMinutes: 2 },
+  globalRead: { max: 300, windowMinutes: 10 },
+  reportUser: { max: 10, windowMinutes: 60 },
+  reportIp: { max: 30, windowMinutes: 60 },
 } as const;
 
 /**

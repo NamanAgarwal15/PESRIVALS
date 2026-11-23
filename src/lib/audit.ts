@@ -17,12 +17,17 @@ export type AuditAction =
   | "sybil.dismiss"
   | "sybil.suspend_user"
   | "user.reset_quota"
-  | "coach.chats_viewed";
+  | "coach.chats_viewed"
+  | "chat.reports_viewed"
+  | "chat.hide_message"
+  | "chat.unhide_message"
+  | "chat.report_reviewed"
+  | "chat.report_dismissed";
 
 export async function recordAudit(
   actorUserId: string,
   action: AuditAction,
-  targetType: "user" | "match" | "sybil_flag",
+  targetType: "user" | "match" | "sybil_flag" | "chat_message" | "chat_report",
   targetId: string,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {

@@ -22,6 +22,9 @@ export default function LeaderboardPage({ searchParams }: PageProps<"/leaderboar
         <p className="text-sm text-muted-foreground">
           Aggregated career stats across every rivalry — never individual head-to-head scores. Challenge any player to start a rivalry.
         </p>
+        <Link href="/lobby" className="self-start text-sm text-primary underline-offset-4 hover:underline">
+          Open the lobby chat ›
+        </Link>
       </header>
       <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
         <LeaderboardContent searchParams={searchParams} />

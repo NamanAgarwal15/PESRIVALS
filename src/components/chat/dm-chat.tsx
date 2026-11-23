@@ -18,6 +18,8 @@ export function DmChat({ username, displayName }: { username: string; displayNam
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [reportFor, setReportFor] = useState<string | null>(null);
   const inputId = useId();
   const end = useRef<HTMLDivElement>(null);
   const url = `/api/chat/${encodeURIComponent(username)}`;
@@ -72,6 +74,19 @@ export function DmChat({ username, displayName }: { username: string; displayNam
     }
   }
 
+  async function report(messageId: string, reason: string) {
+    setReportFor(null);
+    setError(null);
+    const res = await fetch(`${url}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId, reason }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (data?.ok) setNotice("Thanks, an admin will review that message.");
+    else setError(data?.error ?? "Could not send that report.");
+  }
+
   async function toggleBlock(blocked: boolean) {
     setError(null);
     const res = await fetch(`${url}/block`, {
@@ -109,7 +124,7 @@ export function DmChat({ username, displayName }: { username: string; displayNam
             <p className="text-sm text-muted-foreground">No messages yet. Say hello.</p>
           ) : null}
           {thread?.messages.map((m) => (
-            <div key={m.id} className={m.mine ? "flex justify-end" : "flex justify-start"}>
+            <div key={m.id} className={m.mine ? "flex flex-col items-end gap-1" : "flex flex-col items-start gap-1"}>
               <p
                 className={`max-w-[85%] rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap ${
                   m.mine ? "bg-primary text-primary-foreground" : "bg-muted"
@@ -117,6 +132,20 @@ export function DmChat({ username, displayName }: { username: string; displayNam
               >
                 {m.body}
               </p>
+              {!m.mine ? (
+                <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setReportFor(reportFor === m.id ? null : m.id)}>
+                  Report
+                </button>
+              ) : null}
+              {reportFor === m.id ? (
+                <div className="flex flex-wrap gap-2">
+                  {["spam", "harassment", "hate", "links", "other"].map((r) => (
+                    <Button key={r} type="button" size="sm" variant="outline" onClick={() => report(m.id, r)}>
+                      {r}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ))}
           <div ref={end} />
@@ -132,6 +161,7 @@ export function DmChat({ username, displayName }: { username: string; displayNam
             This player is not accepting messages. You can still challenge them.
           </p>
         ) : null}
+        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
 
         <form onSubmit={send} className="flex gap-2">

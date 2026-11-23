@@ -49,7 +49,7 @@ export const messageBodySchema = z
 type Peer = { id: string; username: string; displayName: string };
 
 /** The other player, only if they can be chatted with at all. Same answer for "missing" and "suspended". */
-async function resolvePeer(meId: string, username: unknown): Promise<Peer | null> {
+export async function resolvePeer(meId: string, username: unknown): Promise<Peer | null> {
   const parsed = usernameSchema.safeParse(typeof username === "string" ? username.toLowerCase() : "");
   if (!parsed.success) return null;
   const rows = await db

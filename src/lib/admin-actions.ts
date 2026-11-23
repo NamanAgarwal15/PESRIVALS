@@ -15,6 +15,7 @@ import {
   setTempPasswordHash,
 } from "@/lib/admin";
 import { QUOTA_BUCKETS, resetUserQuota } from "@/lib/admin-coach";
+import { resolveChatReport, setGlobalMessageHidden } from "@/lib/admin-chat";
 import { z } from "zod";
 import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -118,5 +119,23 @@ export async function resetUserQuotaAction(fd: FormData): Promise<void> {
   const parsed = quotaSchema.safeParse({ userId: field(fd, "userId"), bucket: field(fd, "bucket") });
   if (!parsed.success) return;
   await resetUserQuota(me, parsed.data.userId, parsed.data.bucket);
+  revalidatePath("/admin");
+}
+
+
+export async function adminHideChatMessageAction(fd: FormData): Promise<void> {
+  const me = await requireAdmin();
+  const messageId = field(fd, "messageId");
+  if (!isUuid(messageId)) return;
+  await setGlobalMessageHidden(me, messageId, field(fd, "hidden") === "true");
+  revalidatePath("/admin");
+}
+
+export async function adminResolveChatReportAction(fd: FormData): Promise<void> {
+  const me = await requireAdmin();
+  const reportId = field(fd, "reportId");
+  const status = field(fd, "status");
+  if (!isUuid(reportId) || (status !== "reviewed" && status !== "dismissed")) return;
+  await resolveChatReport(me, reportId, status);
   revalidatePath("/admin");
 }
