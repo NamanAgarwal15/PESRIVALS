@@ -11,17 +11,22 @@
 //  - Bodies are plain text: control and bidi/zero-width characters are removed
 //    and the UI renders them as text nodes. No LLM touches chat.
 
-import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { dmMessages, messageBlocks, users } from "@/db/schema";
-import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
+import { chatReports, dmMessages, messageBlocks, users } from "@/db/schema";
+import { checkChatText } from "@/lib/chat-filter";
+import { MUTED_MESSAGE, isChatMuted } from "@/lib/chat-mute";
+import { LIMITS, consumeRateLimit, peekRateLimit } from "@/lib/rate-limit";
+import { securityLog } from "@/lib/security-log";
 import { canonicalPair } from "@/lib/rivalry-helpers";
 
 export const DM_MAX_LENGTH = 500;
 export const DM_PAGE_SIZE = 50;
+export const DM_RETENTION_DAYS = 30;
+const DM_STRIKE = { max: 5, windowMinutes: 10 } as const;
 
-export type DmErrorCode = "not_found" | "blocked" | "rate_limited" | "invalid";
+export type DmErrorCode = "not_found" | "blocked" | "rate_limited" | "invalid" | "muted" | "filtered";
 export type DmFail = { ok: false; code: DmErrorCode; error: string };
 const fail = (code: DmErrorCode, error: string): DmFail => ({ ok: false, code, error });
 
@@ -139,11 +144,34 @@ export async function sendMessage(
 
   const peer = await resolvePeer(meId, username);
   if (!peer) return fail("not_found", "Player not found.");
+  if (await isChatMuted(meId)) return fail("muted", MUTED_MESSAGE);
+
+  // Cool-off after repeated filtered attempts (free to check).
+  const strikes = await peekRateLimit(`dm-strike:${meId}`, DM_STRIKE.max, DM_STRIKE.windowMinutes);
+  if (strikes.used >= DM_STRIKE.max) return fail("rate_limited", "Too many blocked messages. Take a short break and try again.");
 
   // Refused sends and bad bodies cost nothing; real attempts are counted per user and per IP.
   const user = await consumeRateLimit(`dm:${meId}`, LIMITS.dmUser.max, LIMITS.dmUser.windowMinutes);
   const net = ip ? await consumeRateLimit(`dm-ip:${ip}`, LIMITS.dmIp.max, LIMITS.dmIp.windowMinutes) : { ok: true };
   if (!user.ok || !net.ok) return fail("rate_limited", "You are sending messages too fast. Slow down for a few minutes.");
+
+  // Same deterministic filter as the lobby (links, abuse, floods, duplicates), with the DM length limit.
+  // The stored text keeps line breaks; the filter only judges it.
+  const [a0, b0] = canonicalPair(meId, peer.id);
+  const recent = await db
+    .select({ body: dmMessages.body })
+    .from(dmMessages)
+    .where(and(eq(dmMessages.userAId, a0), eq(dmMessages.userBId, b0), eq(dmMessages.senderId, meId), gt(dmMessages.createdAt, new Date(Date.now() - 120_000))))
+    .orderBy(desc(dmMessages.createdAt))
+    .limit(5);
+  const verdict = checkChatText(text.data, recent.map((r) => r.body), DM_MAX_LENGTH);
+  if (!verdict.ok) {
+    if (verdict.reason !== "empty" && verdict.reason !== "too_long") {
+      await consumeRateLimit(`dm-strike:${meId}`, DM_STRIKE.max, DM_STRIKE.windowMinutes);
+      securityLog("chat_denied", { userId: meId, reason: verdict.reason, scope: "dm" });
+    }
+    return fail(verdict.reason === "empty" || verdict.reason === "too_long" ? "invalid" : "filtered", verdict.message);
+  }
 
   const state = await blockState(meId, peer.id);
   if (state.theyBlockedMe) return fail("blocked", "This player is not accepting messages. You can still challenge them.");
@@ -171,4 +199,29 @@ export async function setMessageBlock(
     await db.delete(messageBlocks).where(and(eq(messageBlocks.blockerId, meId), eq(messageBlocks.blockedId, peer.id)));
   }
   return { ok: true, blocked };
+}
+
+/** Deletes 1v1 messages older than the retention window, except ones an open report still points at. */
+export async function pruneDmMessages(): Promise<void> {
+  await db.delete(dmMessages).where(
+    and(
+      lt(dmMessages.createdAt, new Date(Date.now() - DM_RETENTION_DAYS * 86_400_000)),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(chatReports)
+          .where(and(eq(chatReports.dmMessageId, dmMessages.id), eq(chatReports.status, "open"))),
+      ),
+    ),
+  );
+}
+
+/** ~2% of sends run the cleanup, so no cron is needed. */
+export async function maybePruneDmMessages(random: number = Math.random()): Promise<void> {
+  if (random >= 0.02) return;
+  try {
+    await pruneDmMessages();
+  } catch (err) {
+    securityLog("request_failed", { route: "dm_prune", error: err instanceof Error ? err.name : "unknown" }, "error");
+  }
 }

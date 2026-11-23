@@ -15,7 +15,7 @@ import {
   setTempPasswordHash,
 } from "@/lib/admin";
 import { QUOTA_BUCKETS, resetUserQuota } from "@/lib/admin-coach";
-import { resolveChatReport, setGlobalMessageHidden } from "@/lib/admin-chat";
+import { reopenClanWar, resolveChatReport, setChatMute, setClanMessageHidden, setGlobalMessageHidden } from "@/lib/admin-chat";
 import { z } from "zod";
 import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -127,7 +127,9 @@ export async function adminHideChatMessageAction(fd: FormData): Promise<void> {
   const me = await requireAdmin();
   const messageId = field(fd, "messageId");
   if (!isUuid(messageId)) return;
-  await setGlobalMessageHidden(me, messageId, field(fd, "hidden") === "true");
+  const hidden = field(fd, "hidden") === "true";
+  if (field(fd, "kind") === "clan") await setClanMessageHidden(me, messageId, hidden);
+  else await setGlobalMessageHidden(me, messageId, hidden);
   revalidatePath("/admin");
 }
 
@@ -138,4 +140,17 @@ export async function adminResolveChatReportAction(fd: FormData): Promise<void> 
   if (!isUuid(reportId) || (status !== "reviewed" && status !== "dismissed")) return;
   await resolveChatReport(me, reportId, status);
   revalidatePath("/admin");
+}
+
+export async function adminSetChatMuteAction(fd: FormData): Promise<void> {
+  const me = await requireAdmin();
+  await setChatMute(me, field(fd, "userId"), field(fd, "preset")); // validated with Zod inside
+  revalidatePath("/admin");
+}
+
+export async function adminReopenClanWarAction(fd: FormData): Promise<void> {
+  const me = await requireAdmin();
+  await reopenClanWar(me, field(fd, "warId"), field(fd, "note"));
+  revalidatePath("/admin");
+  revalidatePath("/clans", "layout");
 }

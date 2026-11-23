@@ -9,8 +9,10 @@
 import { and, desc, eq, gt, lt, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { chatReports, dmMessages, globalChatMessages, messageBlocks, users } from "@/db/schema";
+import { chatReports, clanChatMessages, clanChatReports, dmMessages, globalChatMessages, messageBlocks, users } from "@/db/schema";
 import { checkChatText } from "@/lib/chat-filter";
+import { MUTED_MESSAGE, isChatMuted } from "@/lib/chat-mute";
+import { getMembership } from "@/lib/clans";
 import { resolvePeer } from "@/lib/dm-chat";
 import { LIMITS, consumeRateLimit, peekRateLimit } from "@/lib/rate-limit";
 import { canonicalPair } from "@/lib/rivalry-helpers";
@@ -21,7 +23,7 @@ export const GLOBAL_RETENTION_HOURS = 72;
 export const REPORT_REASONS = ["spam", "harassment", "hate", "links", "other"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 
-export type GlobalErrorCode = "not_found" | "rate_limited" | "invalid" | "filtered";
+export type GlobalErrorCode = "not_found" | "rate_limited" | "invalid" | "filtered" | "muted";
 export type GlobalFail = { ok: false; code: GlobalErrorCode; error: string };
 const fail = (code: GlobalErrorCode, error: string): GlobalFail => ({ ok: false, code, error });
 
@@ -81,6 +83,7 @@ export async function sendGlobalMessage(
   body: unknown,
   ip: string | null = null,
 ): Promise<{ ok: true; message: GlobalMessage } | GlobalFail> {
+  if (await isChatMuted(meId)) return fail("muted", MUTED_MESSAGE);
   // Cool-off after repeated filtered attempts (checked first, costs nothing).
   const strikes = await peekRateLimit(`gc-strike:${meId}`, STRIKE.max, STRIKE.windowMinutes);
   if (strikes.used >= STRIKE.max) return fail("rate_limited", "Too many blocked messages. Take a short break and try again.");
@@ -168,6 +171,28 @@ export async function reportDmMessage(meId: string, username: unknown, input: un
   await db
     .insert(chatReports)
     .values({ reporterId: meId, reportedUserId: peer.id, dmMessageId: msg.id, reason: parsed.data.reason })
+    .onConflictDoNothing();
+  return { ok: true };
+}
+
+/** Reports a message in YOUR OWN clan's private chat. Anyone outside the clan gets "not found". */
+export async function reportClanMessage(meId: string, tag: unknown, input: unknown, ip: string | null = null): Promise<{ ok: true } | GlobalFail> {
+  const parsed = reportSchema.safeParse(input);
+  if (!parsed.success) return fail("invalid", "Choose a reason for the report.");
+  const mine = await getMembership(meId);
+  if (!mine || typeof tag !== "string" || mine.tag !== tag.toUpperCase().slice(0, 6)) return fail("not_found", "Message not found.");
+  const limited = await reportLimits(meId, ip);
+  if (limited) return limited;
+
+  const [msg] = await db
+    .select({ id: clanChatMessages.id, senderId: clanChatMessages.senderId })
+    .from(clanChatMessages)
+    .where(and(eq(clanChatMessages.id, parsed.data.messageId), eq(clanChatMessages.clanId, mine.clanId)));
+  if (!msg) return fail("not_found", "Message not found.");
+  if (msg.senderId === meId) return fail("invalid", "You cannot report your own message.");
+  await db
+    .insert(clanChatReports)
+    .values({ reporterId: meId, reportedUserId: msg.senderId, clanMessageId: msg.id, reason: parsed.data.reason })
     .onConflictDoNothing();
   return { ok: true };
 }

@@ -3,7 +3,7 @@ import { reportDmMessage } from "@/lib/global-chat";
 import { clientIpFromHeaders } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
-const STATUS = { not_found: 404, rate_limited: 429, invalid: 400, filtered: 422 } as const;
+const STATUS = { not_found: 404, rate_limited: 429, invalid: 400, filtered: 422, muted: 403 } as const;
 
 // POST { messageId, reason } -> reports a message the other player sent you in your 1v1 thread.
 export async function POST(request: Request, context: RouteContext<"/api/chat/[username]/report">) {

@@ -252,7 +252,7 @@ export type WarView = {
   defender: { tag: string; name: string; wins: number };
   winnerTag: string | null;
   createdAt: string;
-  pairings: { slot: number; challenger: string; defender: string; status: string; winner: string | null }[];
+  pairings: { slot: number; challenger: string; defender: string; status: string; winner: string | null; rivalry: "active" | "pending" | "none" }[];
   /** What the viewer's clan may do with this war. */
   canAccept: boolean;
   canCancel: boolean;
@@ -281,6 +281,20 @@ export async function getClanWars(clanId: string, viewerRole: string | null, lim
     .from(users)
     .where(inArray(users.id, [...new Set(pairs.flatMap((p) => [p.challengerPlayerId, p.defenderPlayerId]))]));
   const name = new Map(people.map((p) => [p.id, p.username]));
+  // Can this pair actually play a settling match? They need an active rivalry with each other.
+  const playerIds = [...new Set(pairs.flatMap((p) => [p.challengerPlayerId, p.defenderPlayerId]))];
+  const rivalRows = playerIds.length
+    ? await db
+        .select({ a: rivalries.userAId, b: rivalries.userBId, status: rivalries.status })
+        .from(rivalries)
+        .where(and(inArray(rivalries.userAId, playerIds), inArray(rivalries.userBId, playerIds), inArray(rivalries.status, ["active", "pending"])))
+        .limit(200)
+    : [];
+  const rivalryOf = (x: string, y: string): "active" | "pending" | "none" => {
+    const [lo, hi] = canonicalPair(x, y);
+    const hit = rivalRows.filter((r) => r.a === lo && r.b === hi);
+    return hit.some((r) => r.status === "active") ? "active" : hit.length ? "pending" : "none";
+  };
   const officer = viewerRole === "leader" || viewerRole === "officer";
 
   return fresh.map((w) => {
@@ -302,6 +316,7 @@ export async function getClanWars(clanId: string, viewerRole: string | null, lim
           defender: name.get(p.defenderPlayerId) ?? "?",
           status: p.status,
           winner: p.winnerPlayerId ? name.get(p.winnerPlayerId) ?? null : null,
+          rivalry: rivalryOf(p.challengerPlayerId, p.defenderPlayerId),
         })),
       canAccept: officer && w.status === "pending" && w.defenderClanId === clanId,
       canCancel: officer && w.status === "pending" && w.challengerClanId === clanId,

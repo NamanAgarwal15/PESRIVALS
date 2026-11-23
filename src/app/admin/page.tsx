@@ -7,7 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import {
   adminDeleteMatchAction,
+  adminReopenClanWarAction,
   adminResolveSybilFlagAction,
+  adminSetChatMuteAction,
   resetUserQuotaAction,
   adminSetAnnouncementAction,
   adminSetPasswordAction,
@@ -27,7 +29,7 @@ import { listAuditLogs } from "@/lib/audit";
 import { CoachChatReader } from "@/components/admin/coach-chat-reader";
 import { getAdminCoachChatLogs } from "@/lib/admin-coach";
 import { ChatReportQueue } from "@/components/admin/chat-report-queue";
-import { REPORT_STATUSES, getChatReports } from "@/lib/admin-chat";
+import { REPORT_STATUSES, getChatReports, getCompletedWars } from "@/lib/admin-chat";
 import { getSession } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Admin | PESRIVALS", robots: { index: false } };
@@ -56,7 +58,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
   const chatPage = Math.max(0, Math.min(10_000, Number(typeof sp.cp === "string" ? sp.cp : 0) || 0));
   const reportStatus = (REPORT_STATUSES as readonly string[]).includes(String(sp.rs)) ? (sp.rs as (typeof REPORT_STATUSES)[number]) : sp.rs === "all" ? "all" : "open";
   const reportPage = Math.max(0, Math.min(10_000, Number(typeof sp.rp === "string" ? sp.rp : 0) || 0));
-  const [stats, userRows, recent, announcement, flags, audit, chats, reports] = await Promise.all([
+  const [stats, userRows, recent, announcement, flags, audit, chats, reports, completedWars] = await Promise.all([
     getPlatformStats(),
     listUsers(q),
     listRecentMatches(),
@@ -65,6 +67,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
     listAuditLogs(),
     getAdminCoachChatLogs(adminId, { flaggedOnly: chatFilter === "flagged", username: chatUser, page: chatPage }),
     getChatReports(adminId, { status: reportStatus, page: reportPage }),
+    getCompletedWars(adminId),
   ]);
   const matchRows = (recent as unknown as { rows: Record<string, string | number>[] }).rows;
   const kpis: [string, number][] = [
@@ -155,6 +158,16 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
                   </select>
                   <Button type="submit" size="sm" variant="outline">Reset quota</Button>
                 </form>
+                <form action={adminSetChatMuteAction} className="flex gap-1">
+                  <input type="hidden" name="userId" value={u.id} />
+                  <select name="preset" aria-label="Chat mute duration" defaultValue={u.chatMutedUntil && u.chatMutedUntil > new Date() ? "unmute" : "24h"} className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm">
+                    <option value="24h">Mute chat 24h</option>
+                    <option value="7d">Mute chat 7d</option>
+                    <option value="permanent">Mute chat (long)</option>
+                    <option value="unmute">Unmute chat</option>
+                  </select>
+                  <Button type="submit" size="sm" variant="outline">{u.chatMutedUntil && u.chatMutedUntil > new Date() ? `Chat muted until ${u.chatMutedUntil.toISOString().slice(0, 10)} · apply` : "Apply"}</Button>
+                </form>
                 <form action={adminSetRoleAction}>
                   <input type="hidden" name="userId" value={u.id} />
                   <input type="hidden" name="role" value={u.role === "admin" ? "user" : "admin"} />
@@ -216,6 +229,31 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
       <CoachChatReader data={chats} filter={chatFilter} user={chatUser} />
 
       <ChatReportQueue data={reports} status={reportStatus} />
+
+      <Card id="clan-wars-admin">
+        <CardHeader>
+          <CardTitle>Completed clan wars</CardTitle>
+          <CardDescription>
+            Re-open a war if a deciding match was disputed or deleted. Every slot is re-checked against the matches as they are now, and the re-open is recorded in the audit log.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {completedWars.length === 0 ? <p className="text-sm text-muted-foreground">No completed wars.</p> : null}
+          {completedWars.map((w) => (
+            <form key={w.id} action={adminReopenClanWarAction} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-2 text-sm last:border-0">
+              <input type="hidden" name="warId" value={w.id} />
+              <span>
+                [{w.challengerTag}] <b className="tabular-nums">{w.challengerWins}–{w.defenderWins}</b> [{w.defenderTag}]
+                <span className="ml-2 text-muted-foreground">{w.completedAt?.toISOString().slice(0, 10)}</span>
+              </span>
+              <span className="flex gap-2">
+                <Input name="note" placeholder="Reason (optional)" maxLength={200} className="h-8 w-48" />
+                <Button type="submit" size="sm" variant="outline">Re-open war</Button>
+              </span>
+            </form>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

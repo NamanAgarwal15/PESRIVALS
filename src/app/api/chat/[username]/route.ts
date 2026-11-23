@@ -1,9 +1,10 @@
 import { apiUser, noStoreJson as json } from "@/lib/api-guard";
-import { getThread, sendMessage } from "@/lib/dm-chat";
+import { after } from "next/server";
+import { getThread, maybePruneDmMessages, sendMessage } from "@/lib/dm-chat";
 import { LIMITS, clientIpFromHeaders, consumeRateLimit } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
-const STATUS = { not_found: 404, blocked: 403, rate_limited: 429, invalid: 400 } as const;
+const STATUS = { not_found: 404, blocked: 403, rate_limited: 429, invalid: 400, muted: 403, filtered: 422 } as const;
 
 // GET ?after=<iso>  -> newest messages of YOUR thread with :username (polling).
 export async function GET(request: Request, context: RouteContext<"/api/chat/[username]">) {
@@ -37,6 +38,7 @@ export async function POST(request: Request, context: RouteContext<"/api/chat/[u
       if (res.code === "rate_limited") securityLog("rate_limited", { route: "chat", userId: who.userId });
       return json({ ok: false, error: res.error }, STATUS[res.code]);
     }
+    after(() => maybePruneDmMessages()); // 30-day retention, ~2% of sends
     return json({ ok: true, message: res.message }, 201);
   } catch (err) {
     securityLog("request_failed", { route: "chat_post", error: err instanceof Error ? err.name : "unknown" }, "error");

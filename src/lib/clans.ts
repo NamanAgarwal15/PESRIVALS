@@ -12,8 +12,9 @@
 import { and, asc, desc, eq, gt, lt, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { clanChatMessages, clanInvites, clanMembers, clans, messageBlocks, users } from "@/db/schema";
+import { clanChatMessages, clanChatReports, clanInvites, clanMembers, clans, messageBlocks, users } from "@/db/schema";
 import { checkChatText } from "@/lib/chat-filter";
+import { MUTED_MESSAGE, isChatMuted } from "@/lib/chat-mute";
 import { pgErrorCode } from "@/lib/pg-error";
 import { LIMITS, consumeRateLimit, peekRateLimit } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
@@ -24,7 +25,7 @@ export const CLAN_CHAT_PAGE = 50;
 export const CLAN_CHAT_RETENTION_DAYS = 14;
 
 export type ClanRole = "leader" | "officer" | "member";
-export type ClanErrorCode = "not_found" | "forbidden" | "invalid" | "conflict" | "rate_limited" | "filtered";
+export type ClanErrorCode = "not_found" | "forbidden" | "invalid" | "conflict" | "rate_limited" | "filtered" | "muted";
 export type ClanFail = { ok: false; code: ClanErrorCode; error: string };
 export const clanFail = (code: ClanErrorCode, error: string): ClanFail => ({ ok: false, code, error });
 
@@ -375,6 +376,7 @@ export async function getClanMessages(actorId: string, tag: unknown): Promise<{ 
     .where(
       and(
         eq(clanChatMessages.clanId, me.clanId),
+        eq(clanChatMessages.hidden, false),
         gt(clanChatMessages.createdAt, new Date(Date.now() - CLAN_CHAT_RETENTION_DAYS * 86_400_000)),
         // Phase 7B: messages from someone you blocked stay hidden here too. Challenges are unaffected.
         notExists(
@@ -397,6 +399,7 @@ const CLAN_STRIKE = { max: 5, windowMinutes: 10 } as const;
 export async function sendClanMessage(actorId: string, tag: unknown, body: unknown, ip: string | null = null): Promise<{ ok: true; message: ClanMessage } | ClanFail> {
   const me = await memberOf(actorId, tag);
   if (!me) return clanFail("not_found", "Clan not found.");
+  if (await isChatMuted(actorId)) return clanFail("muted", MUTED_MESSAGE);
 
   const strikes = await peekRateLimit(`clan-strike:${actorId}`, CLAN_STRIKE.max, CLAN_STRIKE.windowMinutes);
   if (strikes.used >= CLAN_STRIKE.max) return clanFail("rate_limited", "Too many blocked messages. Take a short break and try again.");
@@ -427,7 +430,15 @@ export async function sendClanMessage(actorId: string, tag: unknown, body: unkno
 }
 
 export async function pruneClanChat(): Promise<void> {
-  await db.delete(clanChatMessages).where(lt(clanChatMessages.createdAt, new Date(Date.now() - CLAN_CHAT_RETENTION_DAYS * 86_400_000)));
+  await db.delete(clanChatMessages).where(
+    and(
+      lt(clanChatMessages.createdAt, new Date(Date.now() - CLAN_CHAT_RETENTION_DAYS * 86_400_000)),
+      // Messages under an open report are kept for the admin queue.
+      notExists(
+        db.select({ one: sql`1` }).from(clanChatReports).where(and(eq(clanChatReports.clanMessageId, clanChatMessages.id), eq(clanChatReports.status, "open"))),
+      ),
+    ),
+  );
 }
 
 export async function maybePruneClanChat(random: number = Math.random()): Promise<void> {

@@ -35,14 +35,15 @@ export function ChatReportQueue({ data, status }: { data: AdminReportPage; statu
         {data.rows.map((r) => (
           <div key={r.id} className="flex flex-col gap-2 border-b border-border/50 pb-3 text-sm last:border-0">
             <p className="text-xs text-muted-foreground">
-              {r.kind === "global" ? "Lobby" : "1v1"} · {r.reason} · @{r.reporter} reported @{r.reported} · {r.createdAt.toISOString().slice(0, 16).replace("T", " ")} · {r.status}
+              {r.kind === "global" ? "Lobby" : r.kind === "clan" ? "Clan chat" : "1v1"} · {r.reason} · @{r.reporter} reported @{r.reported} · {r.createdAt.toISOString().slice(0, 16).replace("T", " ")} · {r.status}
               {r.hidden ? " · hidden" : ""}
             </p>
             <p className="rounded-md bg-muted px-3 py-2 break-words whitespace-pre-wrap">{r.body ?? "(message no longer available)"}</p>
             <div className="flex flex-wrap gap-2">
-              {r.kind === "global" && r.messageId ? (
+              {(r.kind === "global" || r.kind === "clan") && r.messageId ? (
                 <form action={adminHideChatMessageAction}>
                   <input type="hidden" name="messageId" value={r.messageId} />
+                  <input type="hidden" name="kind" value={r.kind} />
                   <input type="hidden" name="hidden" value={r.hidden ? "false" : "true"} />
                   <Button type="submit" size="sm" variant={r.hidden ? "outline" : "destructive"}>{r.hidden ? "Unhide" : "Hide message"}</Button>
                 </form>

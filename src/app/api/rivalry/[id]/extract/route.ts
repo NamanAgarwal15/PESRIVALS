@@ -39,7 +39,7 @@ export async function POST(
   context: RouteContext<"/api/rivalry/[id]/extract">,
 ) {
   // Signed in and not suspended (checked in the database: this route spends Gemini quota).
-  const who = await apiUser(request, false);
+  const who = await apiUser(request, true); // mutating + spends quota: same-origin required
   if ("error" in who) return who.error;
   if (!who.onboarded) return fail("Finish setting up your account first.", 403);
 
@@ -106,7 +106,7 @@ export async function POST(
     return json({ ok: true, extracted: result.extracted, confidence: result.confidence }, 200);
   } catch (err) {
     console.error(
-      `[extract] unexpected failure: ${err instanceof Error ? `${err.name}: ${err.message}` : "unknown"}`,
+      `[extract] unexpected failure: ${err instanceof Error ? err.name : "unknown"}`,
     );
     // Never leak stack traces or provider details to the client.
     return fail("Could not read that screenshot. Try again.", 503);

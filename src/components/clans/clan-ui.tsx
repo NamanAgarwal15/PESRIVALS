@@ -163,6 +163,8 @@ export function ClanChat({ tag }: { tag: string }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [reporting, setReporting] = useState<string | null>(null);
   const id = useId();
   const end = useRef<HTMLDivElement>(null);
   const load = useCallback(async () => {
@@ -186,12 +188,40 @@ export function ClanChat({ tag }: { tag: string }) {
         {messages && !messages.length ? <p className="text-sm text-muted-foreground">No messages yet.</p> : null}
         {messages?.map((m) => (
           <div key={m.id} className="flex flex-col gap-0.5">
-            <span className="text-xs text-muted-foreground">{m.displayName} @{m.username}</span>
+            <span className="flex flex-wrap items-baseline gap-2 text-xs text-muted-foreground">
+              {m.displayName} @{m.username}
+              {!m.mine ? (
+                <button type="button" className="ml-auto hover:underline" onClick={() => setReporting(reporting === m.id ? null : m.id)}>
+                  Report
+                </button>
+              ) : null}
+            </span>
             <p className={`rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap ${m.mine ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{m.body}</p>
+            {reporting === m.id ? (
+              <div className="flex flex-wrap gap-2">
+                {["spam", "harassment", "hate", "links", "other"].map((reason) => (
+                  <Button
+                    key={reason}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      setReporting(null);
+                      const r = await call(`/api/clans/${tag}/report`, "POST", { messageId: m.id, reason });
+                      if (r.ok) setNotice("Thanks, an admin will review that message.");
+                      else setError(r.error ?? "Could not send that report.");
+                    }}
+                  >
+                    {reason}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
         <div ref={end} />
       </div>
+      {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
       <Err error={error} />
       <form
         className="flex gap-2"

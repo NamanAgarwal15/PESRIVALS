@@ -17,6 +17,7 @@ import { STAT_KEYS } from "@/lib/match-stats";
 import { type Gray, readInteger } from "@/lib/ocr/digit-ocr";
 import { MAX_IMAGE_PIXELS, checkDimensions } from "@/lib/ocr/image-guard";
 import { type Region, layoutFor } from "@/lib/ocr/layout";
+import { tryAcquireDecodeSlot } from "@/lib/ocr/limiter";
 import { checkInvariants } from "@/lib/ocr/invariants";
 
 /**
@@ -35,7 +36,7 @@ export function localOcrEnabled(env: Record<string, string | undefined> = proces
 
 export type LocalResult =
   | { ok: true; extracted: ExtractedMatch; confidence: ConfidenceReport }
-  | { ok: false; reason: "oversized" | "tiny" | "decode_failed" | "no_layout" | "unreadable" | "invariants" | "schema" | "disabled" };
+  | { ok: false; reason: "oversized" | "tiny" | "decode_failed" | "no_layout" | "busy" | "unreadable" | "invariants" | "schema" | "disabled" };
 
 // Team names are text, which a digit reader cannot read. Neutral labels keep
 // the existing "which side were you" step working; the user can still tell
@@ -56,7 +57,10 @@ function crop(img: Gray, r: Region): Gray {
   return { data, width, height };
 }
 
-async function decodeGray(bytes: Uint8Array): Promise<Gray | null> {
+/** null = could not decode; "busy" = every decode slot is taken (caller falls back to Gemini). */
+async function decodeGray(bytes: Uint8Array): Promise<Gray | "busy" | null> {
+  const release = tryAcquireDecodeSlot();
+  if (!release) return "busy";
   try {
     const sharp = (await import("sharp")).default;
     sharp.cache(false);
@@ -73,6 +77,8 @@ async function decodeGray(bytes: Uint8Array): Promise<Gray | null> {
     return { data: new Uint8Array(data), width: info.width, height: info.height };
   } catch {
     return null;
+  } finally {
+    release();
   }
 }
 
@@ -88,6 +94,7 @@ export async function extractLocally(bytes: Uint8Array): Promise<LocalResult> {
   if (!layout) return { ok: false, reason: "no_layout" };
 
   const img = await decodeGray(bytes);
+  if (img === "busy") return { ok: false, reason: "busy" };
   if (!img) return { ok: false, reason: "decode_failed" };
 
   const sides = { left: {} as Record<string, unknown>, right: {} as Record<string, unknown> };

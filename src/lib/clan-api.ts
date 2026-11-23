@@ -2,7 +2,7 @@
 import type { ClanErrorCode } from "@/lib/clans";
 
 export const CLAN_STATUS: Record<ClanErrorCode, number> = {
-  not_found: 404, forbidden: 403, invalid: 400, conflict: 409, rate_limited: 429, filtered: 422,
+  not_found: 404, forbidden: 403, invalid: 400, conflict: 409, rate_limited: 429, filtered: 422, muted: 403,
 };
 
 export async function readJson(request: Request, maxBytes = 4096): Promise<unknown> {

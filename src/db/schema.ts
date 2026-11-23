@@ -54,6 +54,9 @@ export const users = pgTable(
     publicLeaderboard: boolean("public_leaderboard").notNull().default(true),
     // Suspended accounts cannot log in and are hidden from the leaderboard.
     suspended: boolean("suspended").notNull().default(false),
+    // Chat-only mute: while in the future the user cannot SEND chat messages (DM, lobby, clan).
+    // Rivalries, challenges and match uploads are unaffected.
+    chatMutedUntil: timestamp("chat_muted_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -590,6 +593,8 @@ export const clanChatMessages = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    // Set by an admin from the report queue; hidden rows are never served.
+    hidden: boolean("hidden").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -660,5 +665,36 @@ export const clanWarPairings = pgTable(
     unique("clan_war_pairings_challenger_unique").on(t.warId, t.challengerPlayerId),
     unique("clan_war_pairings_defender_unique").on(t.warId, t.defenderPlayerId),
     index("clan_war_pairings_war_idx").on(t.warId),
+  ],
+);
+
+/** Reports of private clan chat messages (separate table so chat_reports keeps its exact-one-target check). */
+export const clanChatReports = pgTable(
+  "clan_chat_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reporterId: uuid("reporter_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reportedUserId: uuid("reported_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clanMessageId: uuid("clan_message_id")
+      .notNull()
+      .references(() => clanChatMessages.id, { onDelete: "cascade" }),
+    // 'spam' | 'harassment' | 'hate' | 'links' | 'other'
+    reason: varchar("reason", { length: 16 }).notNull(),
+    // 'open' | 'reviewed' | 'dismissed'
+    status: varchar("status", { length: 12 }).notNull().default("open"),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("clan_chat_reports_reason", sql`${t.reason} IN ('spam','harassment','hate','links','other')`),
+    check("clan_chat_reports_status", sql`${t.status} IN ('open','reviewed','dismissed')`),
+    check("clan_chat_reports_not_self", sql`${t.reporterId} <> ${t.reportedUserId}`),
+    unique("clan_chat_reports_reporter_message_unique").on(t.reporterId, t.clanMessageId),
+    index("clan_chat_reports_status_created_idx").on(t.status, t.createdAt),
   ],
 );

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
+import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { ClanChat, RosterManage, WarActions, WarChallengeForm } from "@/components/clans/clan-ui";
 import { BackLink } from "@/components/nav/back-link";
@@ -84,6 +85,20 @@ async function ClanContent({ params }: Pick<PageProps<"/clans/[tag]">, "params">
                   <li key={p.slot} className="flex flex-wrap justify-between gap-2">
                     <span>Game {p.slot}: @{p.challenger} vs @{p.defender}</span>
                     <span className="text-muted-foreground">{p.status === "completed" ? `won by @${p.winner ?? "?"}` : "waiting for a confirmed result"}</span>
+                    {p.status === "pending" && w.status !== "declined" && w.status !== "cancelled" && p.rivalry !== "active" ? (
+                      <span className="w-full text-xs">
+                        {me && (me.username === p.challenger || me.username === p.defender) ? (
+                          <>
+                            {p.rivalry === "pending" ? "Rivalry request pending: the other player needs to accept it before this game can settle. " : "You two are not rivals yet, so this game cannot settle. "}
+                            <Link href={`/player/${me.username === p.challenger ? p.defender : p.challenger}`} className="text-primary underline-offset-4 hover:underline">
+                              {p.rivalry === "pending" ? "Open their profile ›" : "Start Rivalry ›"}
+                            </Link>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">{p.rivalry === "pending" ? "Rivalry request pending between these players." : "These players are not rivals yet, so this game cannot settle."}</span>
+                        )}
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

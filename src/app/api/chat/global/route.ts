@@ -4,7 +4,7 @@ import { getGlobalMessages, maybePruneGlobalChat, sendGlobalMessage } from "@/li
 import { LIMITS, clientIpFromHeaders, consumeRateLimit } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
-const STATUS = { not_found: 404, rate_limited: 429, invalid: 400, filtered: 422 } as const;
+const STATUS = { not_found: 404, rate_limited: 429, invalid: 400, filtered: 422, muted: 403 } as const;
 
 // GET -> the newest 50 lobby messages visible to you (your own message blocks applied).
 export async function GET(request: Request) {

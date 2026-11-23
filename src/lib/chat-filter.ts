@@ -133,12 +133,13 @@ export const dupKey = (text: string) =>
 /**
  * @param recent the sender's own recent messages (already stored text) for duplicate detection
  */
-export function checkChatText(raw: unknown, recent: readonly string[] = []): FilterResult {
+export function checkChatText(raw: unknown, recent: readonly string[] = [], maxLength: number = GLOBAL_MAX_LENGTH): FilterResult {
+  const tooLong: FilterResult = { ok: false, reason: "too_long", message: `Keep messages under ${maxLength} characters.` };
   if (typeof raw !== "string") return no("empty");
-  if (raw.length > GLOBAL_MAX_LENGTH * 4) return no("too_long");
+  if (raw.length > maxLength * 4) return tooLong;
   const text = normalizeChatText(raw);
   if (!text) return no("empty");
-  if (text.length > GLOBAL_MAX_LENGTH) return no("too_long");
+  if (text.length > maxLength) return tooLong;
 
   const folded = fold(text);
   if (hasLink(text)) return no("link");

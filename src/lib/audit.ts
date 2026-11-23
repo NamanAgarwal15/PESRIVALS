@@ -22,12 +22,17 @@ export type AuditAction =
   | "chat.hide_message"
   | "chat.unhide_message"
   | "chat.report_reviewed"
-  | "chat.report_dismissed";
+  | "chat.report_dismissed"
+  | "chat.hide_clan_message"
+  | "chat.unhide_clan_message"
+  | "user.chat_mute"
+  | "user.chat_unmute"
+  | "clan_war.reopen";
 
 export async function recordAudit(
   actorUserId: string,
   action: AuditAction,
-  targetType: "user" | "match" | "sybil_flag" | "chat_message" | "chat_report",
+  targetType: "user" | "match" | "sybil_flag" | "chat_message" | "chat_report" | "clan_war",
   targetId: string,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {
