@@ -5,6 +5,7 @@
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries } from "@/db/schema";
+import { settleClanWarsForMatch } from "@/lib/clan-wars";
 import { extractionCacheKey, getCachedExtraction, putCachedExtraction } from "@/lib/extract-cache";
 import { assessConfidence } from "@/lib/confidence";
 import { type IngestResult, VisionVlmIngestor } from "@/lib/ingestors";
@@ -174,6 +175,8 @@ export async function saveMatchForUser(
         .insert(matches)
         .values(values)
         .returning({ id: matches.id, matchNo: matches.matchNo });
+      // Clan wars: settle any slot this confirmed match decides. Never allowed to break a save.
+      await settleClanWarsForMatch(row.id).catch((err) => console.error(`[clan-wars] settle failed: ${err instanceof Error ? err.name : "unknown"}`));
       return { ok: true, matchId: row.id, matchNo: row.matchNo, opponentId };
     } catch (err) {
       const code = pgErrorCode(err);
@@ -317,6 +320,7 @@ export async function disputeMatch(
       ...(note ? { remark: note } : {}),
     })
     .where(and(eq(matches.id, row.id), eq(matches.status, "confirmed")));
+  await settleClanWarsForMatch(row.id).catch(() => undefined); // reopens a clan-war slot this match had settled
   return {
     ok: true,
     rivalryId: row.rivalryId,
@@ -337,6 +341,7 @@ export async function resolveMatchDispute(
     .update(matches)
     .set({ status: "confirmed", needsReview: false })
     .where(and(eq(matches.id, row.id), eq(matches.status, "disputed")));
+  await settleClanWarsForMatch(row.id).catch(() => undefined); // a re-confirmed match can settle a clan-war slot
   return {
     ok: true,
     rivalryId: row.rivalryId,

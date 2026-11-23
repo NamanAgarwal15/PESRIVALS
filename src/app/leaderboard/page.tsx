@@ -25,6 +25,9 @@ export default function LeaderboardPage({ searchParams }: PageProps<"/leaderboar
         <Link href="/lobby" className="self-start text-sm text-primary underline-offset-4 hover:underline">
           Open the lobby chat ›
         </Link>
+        <Link href="/clans" className="self-start text-sm text-primary underline-offset-4 hover:underline">
+          Clans &amp; clan wars ›
+        </Link>
       </header>
       <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
         <LeaderboardContent searchParams={searchParams} />

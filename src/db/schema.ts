@@ -509,3 +509,156 @@ export const chatReports = pgTable(
     index("chat_reports_status_created_idx").on(t.status, t.createdAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Phase 7D: clans, private clan chat, clan wars
+// ---------------------------------------------------------------------------
+
+export const clans = pgTable(
+  "clans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: varchar("name", { length: 40 }).notNull().unique(),
+    // Stored upper-case, 2-6 characters.
+    tag: varchar("tag", { length: 6 }).notNull().unique(),
+    description: varchar("description", { length: 200 }),
+    // Cascade, not restrict: deleting the leader's user row must never be blocked.
+    leaderId: uuid("leader_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("clans_tag_format", sql`${t.tag} ~ '^[A-Z0-9]{2,6}$'`),
+    uniqueIndex("clans_name_lower_unique").on(sql`lower(${t.name})`),
+  ],
+);
+
+/** user_id is UNIQUE: a player is in at most one clan at a time. */
+export const clanMembers = pgTable(
+  "clan_members",
+  {
+    clanId: uuid("clan_id")
+      .notNull()
+      .references(() => clans.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // 'leader' | 'officer' | 'member'
+    role: varchar("role", { length: 8 }).notNull().default("member"),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.clanId, t.userId] }),
+    check("clan_members_role", sql`${t.role} IN ('leader','officer','member')`),
+    index("clan_members_clan_idx").on(t.clanId),
+  ],
+);
+
+export const clanInvites = pgTable(
+  "clan_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clanId: uuid("clan_id")
+      .notNull()
+      .references(() => clans.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    // 'pending' | 'accepted' | 'declined'
+    status: varchar("status", { length: 10 }).notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("clan_invites_status", sql`${t.status} IN ('pending','accepted','declined')`),
+    // One open invite per (clan, player); history rows may repeat.
+    uniqueIndex("clan_invites_pending_unique").on(t.clanId, t.userId).where(sql`${t.status} = 'pending'`),
+    index("clan_invites_user_status_idx").on(t.userId, t.status),
+  ],
+);
+
+export const clanChatMessages = pgTable(
+  "clan_chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clanId: uuid("clan_id")
+      .notNull()
+      .references(() => clans.id, { onDelete: "cascade" }),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("clan_chat_body_length", sql`char_length(${t.body}) BETWEEN 1 AND 300`),
+    index("clan_chat_clan_created_idx").on(t.clanId, t.createdAt),
+  ],
+);
+
+export const clanWars = pgTable(
+  "clan_wars",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    challengerClanId: uuid("challenger_clan_id")
+      .notNull()
+      .references(() => clans.id, { onDelete: "cascade" }),
+    defenderClanId: uuid("defender_clan_id")
+      .notNull()
+      .references(() => clans.id, { onDelete: "cascade" }),
+    seriesSize: integer("series_size").notNull(),
+    // 'pending' | 'active' | 'completed' | 'declined' | 'cancelled'
+    status: varchar("status", { length: 10 }).notNull().default("pending"),
+    challengerWins: integer("challenger_wins").notNull().default(0),
+    defenderWins: integer("defender_wins").notNull().default(0),
+    winnerClanId: uuid("winner_clan_id").references(() => clans.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Only matches saved at or after this moment can settle a pairing.
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    check("clan_wars_distinct", sql`${t.challengerClanId} <> ${t.defenderClanId}`),
+    check("clan_wars_series", sql`${t.seriesSize} IN (3, 5)`),
+    check("clan_wars_status", sql`${t.status} IN ('pending','active','completed','declined','cancelled')`),
+    check("clan_wars_wins", sql`${t.challengerWins} >= 0 AND ${t.defenderWins} >= 0`),
+    index("clan_wars_challenger_idx").on(t.challengerClanId, t.status),
+    index("clan_wars_defender_idx").on(t.defenderClanId, t.status),
+  ],
+);
+
+export const clanWarPairings = pgTable(
+  "clan_war_pairings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    warId: uuid("war_id")
+      .notNull()
+      .references(() => clanWars.id, { onDelete: "cascade" }),
+    slotNumber: integer("slot_number").notNull(),
+    challengerPlayerId: uuid("challenger_player_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    defenderPlayerId: uuid("defender_player_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // UNIQUE: one confirmed match can settle at most one pairing, ever.
+    matchId: uuid("match_id")
+      .unique()
+      .references(() => matches.id, { onDelete: "set null" }),
+    winnerPlayerId: uuid("winner_player_id").references(() => users.id, { onDelete: "set null" }),
+    winnerClanId: uuid("winner_clan_id").references(() => clans.id, { onDelete: "set null" }),
+    // 'pending' | 'completed'
+    status: varchar("status", { length: 10 }).notNull().default("pending"),
+  },
+  (t) => [
+    check("clan_war_pairings_status", sql`${t.status} IN ('pending','completed')`),
+    check("clan_war_pairings_distinct", sql`${t.challengerPlayerId} <> ${t.defenderPlayerId}`),
+    unique("clan_war_pairings_slot_unique").on(t.warId, t.slotNumber),
+    unique("clan_war_pairings_challenger_unique").on(t.warId, t.challengerPlayerId),
+    unique("clan_war_pairings_defender_unique").on(t.warId, t.defenderPlayerId),
+    index("clan_war_pairings_war_idx").on(t.warId),
+  ],
+);

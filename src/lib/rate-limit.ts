@@ -27,6 +27,13 @@ export const LIMITS = {
   globalRead: { max: 300, windowMinutes: 10 },
   reportUser: { max: 10, windowMinutes: 60 },
   reportIp: { max: 30, windowMinutes: 60 },
+  clanCreate: { max: 3, windowMinutes: 1440 },
+  clanInvite: { max: 20, windowMinutes: 60 },
+  clanManage: { max: 60, windowMinutes: 60 },
+  clanChatUser: { max: 15, windowMinutes: 2 },
+  clanChatIp: { max: 60, windowMinutes: 2 },
+  clanChatRead: { max: 300, windowMinutes: 10 },
+  warChallenge: { max: 6, windowMinutes: 60 },
 } as const;
 
 /**
