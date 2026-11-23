@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { adminAuditLogs, coachChatLogs, rivalries, userInsights, users } from "@/db/schema";
 import { isAdminUser } from "@/lib/admin";
 import { recordAudit } from "@/lib/audit";
+import { pruneExpiredCoachChatLogs } from "@/lib/coach-chat";
 import { clearUserRateLimits, utcDay } from "@/lib/rate-limit";
 
 export const QUOTA_BUCKETS = ["all", "coach", "extract", "briefing"] as const;
@@ -81,6 +82,8 @@ export async function getAdminCoachChatLogs(
   opts: { flaggedOnly?: boolean; username?: string; page?: number } = {},
 ): Promise<AdminChatPage> {
   if (!(await isAdminUser(actorId))) return { ok: false, error: "Forbidden" };
+  // Opening the reader also applies the 30-day retention rule, so expired chats are never shown.
+  await pruneExpiredCoachChatLogs().catch(() => 0);
   const page = Math.max(0, Math.min(10_000, Math.floor(Number(opts.page) || 0)));
   const username = (opts.username ?? "").trim().replace(/^@/, "").slice(0, 40);
 

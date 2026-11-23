@@ -12,6 +12,7 @@ import { type CareerLab, aiConfigured, computeCareerLab, loadCareerData, sanitiz
 import { generateGemini } from "@/lib/gemini-text";
 import { db } from "@/db";
 import { coachChatLogs } from "@/db/schema";
+import { inArray, lt } from "drizzle-orm";
 import { LIMITS, consumeRateLimit, dailyKey, nextUtcMidnight, peekRateLimit, refundRateLimit, reserveQuota } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
@@ -264,6 +265,34 @@ export async function logCoachExchange(input: CoachLogInput): Promise<void> {
     });
   } catch (err) {
     securityLog("request_failed", { route: "coach_log", error: err instanceof Error ? err.name : "unknown" }, "error");
+  }
+}
+
+/** Coach chat logs are kept for a rolling 30 days (stated in the privacy policy). */
+export const COACH_LOG_RETENTION_DAYS = 30;
+const PRUNE_BATCH = 1000;
+
+/**
+ * Deletes coach chat logs older than the retention window, at most PRUNE_BATCH rows per call
+ * so it is always cheap; repeated calls drain any backlog. Touches nothing else
+ * (never admin_audit_logs). Returns how many rows were removed.
+ */
+export async function pruneExpiredCoachChatLogs(retentionDays: number = COACH_LOG_RETENTION_DAYS, now: Date = new Date()): Promise<number> {
+  const days = Number.isFinite(retentionDays) && retentionDays >= 1 ? retentionDays : COACH_LOG_RETENTION_DAYS;
+  const cutoff = new Date(now.getTime() - days * 24 * 3600_000);
+  const old = await db.select({ id: coachChatLogs.id }).from(coachChatLogs).where(lt(coachChatLogs.createdAt, cutoff)).limit(PRUNE_BATCH);
+  if (!old.length) return 0;
+  const gone = await db.delete(coachChatLogs).where(inArray(coachChatLogs.id, old.map((r) => r.id))).returning({ id: coachChatLogs.id });
+  return gone.length;
+}
+
+/** Fire-and-forget pruning for hot paths: runs on about 2% of calls and never throws. */
+export async function maybePruneCoachChatLogs(random: number = Math.random()): Promise<void> {
+  if (random >= 0.02) return;
+  try {
+    await pruneExpiredCoachChatLogs();
+  } catch (err) {
+    securityLog("request_failed", { route: "coach_prune", error: err instanceof Error ? err.name : "unknown" }, "error");
   }
 }
 

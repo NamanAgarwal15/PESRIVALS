@@ -1,5 +1,6 @@
 import { apiUser, noStoreJson as json } from "@/lib/api-guard";
-import { answerCoachTurn, checkCoachLimits, validateChatBody } from "@/lib/coach-chat";
+import { after } from "next/server";
+import { answerCoachTurn, checkCoachLimits, maybePruneCoachChatLogs, validateChatBody } from "@/lib/coach-chat";
 import { clientIpFromHeaders } from "@/lib/rate-limit";
 import { securityLog } from "@/lib/security-log";
 
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
     if (!limits.ok) return json({ ok: false, error: "You have asked a lot of questions. Try again in a bit." }, 429);
 
     const answer = await answerCoachTurn(who.userId, checked.value);
+    after(() => maybePruneCoachChatLogs()); // retention cleanup runs after the response is sent
     const q = answer.quota;
     return json({ ok: true, reply: answer.reply, source: answer.source, remainingToday: q.remaining, limit: q.limit, resetsAt: q.resetsAt, aiEnabled: q.aiEnabled }, 200);
   } catch (err) {
