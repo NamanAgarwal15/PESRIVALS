@@ -60,11 +60,16 @@ async function PlayerContent({ params }: Pick<PageProps<"/player/[username]">, "
         {isSelf ? (
           <span className="text-sm text-muted-foreground">This is you</span>
         ) : (
-          <LeaderboardAction
-            targetUserId={user.id}
-            relation={relation}
-            rivalryId={rivalryId ?? undefined}
-          />
+          <div className="flex items-center gap-3">
+            <Link href={`/chat/${user.username}`} className="text-sm text-primary underline-offset-4 hover:underline">
+              Message
+            </Link>
+            <LeaderboardAction
+              targetUserId={user.id}
+              relation={relation}
+              rivalryId={rivalryId ?? undefined}
+            />
+          </div>
         )}
       </header>
 

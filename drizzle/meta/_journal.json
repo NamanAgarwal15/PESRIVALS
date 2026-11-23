@@ -71,6 +71,13 @@
       "when": 1795153831432,
       "tag": "0009_equal_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795444926243,
+      "tag": "0010_heavy_sprite",
+      "breakpoints": true
     }
   ]
 }

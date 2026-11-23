@@ -162,11 +162,16 @@ async function LeaderboardContent({
             </span>
             <span className="col-span-2 flex justify-end lg:col-span-1">
               {me && me !== r.userId ? (
-                <LeaderboardAction
-                  targetUserId={r.userId}
-                  relation={relations[r.userId]?.relation ?? "none"}
-                  rivalryId={relations[r.userId]?.rivalryId}
-                />
+                <span className="flex items-center gap-3">
+                  <Link href={`/chat/${r.username}`} className="text-xs text-primary underline-offset-4 hover:underline">
+                    Message
+                  </Link>
+                  <LeaderboardAction
+                    targetUserId={r.userId}
+                    relation={relations[r.userId]?.relation ?? "none"}
+                    rivalryId={relations[r.userId]?.rivalryId}
+                  />
+                </span>
               ) : me === r.userId ? (
                 <span className="text-xs text-muted-foreground">You</span>
               ) : (

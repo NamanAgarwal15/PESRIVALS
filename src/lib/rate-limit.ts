@@ -19,6 +19,9 @@ export const LIMITS = {
   pushSubscribe: { max: 20, windowMinutes: 60 },
   dispute: { max: 10, windowMinutes: 60 },
   matchExtractIp: { max: 60, windowMinutes: 60 },
+  dmUser: { max: 20, windowMinutes: 5 },
+  dmIp: { max: 60, windowMinutes: 5 },
+  dmRead: { max: 240, windowMinutes: 10 },
 } as const;
 
 /**

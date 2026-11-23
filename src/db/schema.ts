@@ -8,6 +8,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -400,5 +401,56 @@ export const coachChatLogs = pgTable(
   (t) => [
     index("coach_chat_logs_user_created_idx").on(t.userId, t.createdAt),
     index("coach_chat_logs_flagged_created_idx").on(t.flagged, t.createdAt),
+  ],
+);
+
+/**
+ * 1v1 player chat. There is no client-visible thread id: a thread is the
+ * canonical pair (lower uuid = user_a, as for rivalries), derived on the server
+ * from the session user and the other player, so there is nothing to guess (no IDOR).
+ */
+export const dmMessages = pgTable(
+  "dm_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userAId: uuid("user_a_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    userBId: uuid("user_b_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("dm_messages_user_order", sql`${t.userAId} < ${t.userBId}`),
+    check("dm_messages_sender_member", sql`${t.senderId} = ${t.userAId} OR ${t.senderId} = ${t.userBId}`),
+    check("dm_messages_body_length", sql`char_length(${t.body}) BETWEEN 1 AND 500`),
+    index("dm_messages_pair_created_idx").on(t.userAId, t.userBId, t.createdAt),
+  ],
+);
+
+/**
+ * "Block Msgs Only (Keep Challenge Open)": blocker no longer receives messages from
+ * blocked. This table is read by chat code ONLY; rivalry/challenge code never looks at it.
+ */
+export const messageBlocks = pgTable(
+  "message_blocks",
+  {
+    blockerId: uuid("blocker_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blockedId: uuid("blocked_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.blockerId, t.blockedId] }),
+    check("message_blocks_not_self", sql`${t.blockerId} <> ${t.blockedId}`),
+    index("message_blocks_blocked_idx").on(t.blockedId),
   ],
 );
