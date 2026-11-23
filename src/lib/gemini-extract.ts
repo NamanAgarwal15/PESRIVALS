@@ -9,6 +9,7 @@ import { geminiKeyPool } from "@/lib/gemini-keys";
 import { type ConfidenceReport, assessConfidence } from "@/lib/confidence";
 import { type ExtractedMatch, extractedMatchSchema } from "@/lib/match-schema";
 import { SCREENSHOT_MAX_BYTES, STAT_KEYS } from "@/lib/match-stats";
+import { extractLocally, localOcrEnabled } from "@/lib/ocr/local-extract";
 
 export const GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta/models";
@@ -37,7 +38,7 @@ export type ExtractFailureCode =
   | "unavailable";
 
 export type ExtractResult =
-  | { ok: true; extracted: ExtractedMatch; confidence: ConfidenceReport }
+  | { ok: true; extracted: ExtractedMatch; confidence: ConfidenceReport; via?: "local" | "gemini" }
   | { ok: false; code: ExtractFailureCode; error: string };
 
 const failure = (code: ExtractFailureCode, error: string): ExtractResult => ({
@@ -272,6 +273,18 @@ export async function extractMatchFromScreenshot(image: {
   const check = validateScreenshot(image.bytes);
   if (!check.ok) return failure(check.code, check.error);
 
+  // Phase 7A: try the free deterministic grid-crop + local OCR first. This runs
+  // inside the one request the route already charged quota for, so a fallback
+  // to Gemini below never costs the user a second extraction.
+  if (localOcrEnabled()) {
+    const local = await extractLocally(image.bytes);
+    if (local.ok) return { ok: true, extracted: local.extracted, confidence: local.confidence, via: "local" };
+    if (local.reason === "oversized") {
+      return failure("too_large", "That image's resolution is too large. Upload a normal phone screenshot.");
+    }
+    console.info(`[ocr] local read not used (${local.reason}); falling back to Gemini`);
+  }
+
   const keys = configuredKeys();
   if (!keys.length) {
     console.error("[gemini] no GEMINI_API_KEY_1 .. GEMINI_API_KEY_6 configured");
@@ -322,6 +335,7 @@ export async function extractMatchFromScreenshot(image: {
           ok: true,
           extracted: attempt.extracted,
           confidence: assessConfidence(attempt.extracted, attempt.modelLow),
+          via: "gemini",
         };
       }
 

@@ -5,7 +5,7 @@
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries } from "@/db/schema";
-import { getCachedExtraction, putCachedExtraction, sha256Hex } from "@/lib/extract-cache";
+import { extractionCacheKey, getCachedExtraction, putCachedExtraction } from "@/lib/extract-cache";
 import { assessConfidence } from "@/lib/confidence";
 import { type IngestResult, VisionVlmIngestor } from "@/lib/ingestors";
 import { type ExtractedSide, saveMatchInputSchema } from "@/lib/match-schema";
@@ -88,7 +88,7 @@ export async function extractForMember(
 ): Promise<ExtractForMemberResult> {
   const rivalry = await findActiveRivalry(currentUserId, rivalryId);
   if (!rivalry) return { ok: false, code: "not_found", error: "Rivalry not found" };
-  const hash = sha256Hex(image.bytes);
+  const hash = extractionCacheKey(image.bytes);
   const cached = getCachedExtraction(hash);
   if (cached) return cached;
   const result = await VisionVlmIngestor.ingest(image);
