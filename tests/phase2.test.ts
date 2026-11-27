@@ -107,7 +107,7 @@ describe("confidence flags", () => {
     if (!green.ok || !yellow.ok || !flagged.ok) throw new Error("save failed");
     const rows = await db.select().from(matches).where(eq(matches.rivalryId, id));
     const by = (m: string) => rows.find((r) => r.id === m)!;
-    expect(by(green.matchId).needsReview).toBe(false);
+    expect(by(green.matchId).needsReview).toBe(true); // unsigned saves are always flagged (see phase7f)
     expect(by(yellow.matchId).needsReview).toBe(true);
     expect(by(flagged.matchId).needsReview).toBe(true);
     expect(by(green.matchId).status).toBe("confirmed");
@@ -165,8 +165,9 @@ describe("dispute / resolve", () => {
 
     // Outsider cannot resolve; a member can; an admin outside the rivalry can too.
     expect((await resolveMatchDispute(outsider.id, false, save.matchId)).ok).toBe(false);
-    expect((await resolveMatchDispute(p.id, false, save.matchId)).ok).toBe(true);
-    expect((await resolveMatchDispute(p.id, false, save.matchId)).ok).toBe(false);
+    expect((await resolveMatchDispute(p.id, false, save.matchId)).ok).toBe(false); // the uploader cannot re-confirm
+    expect((await resolveMatchDispute(q.id, false, save.matchId)).ok).toBe(true); // the disputer withdraws
+    expect((await resolveMatchDispute(q.id, false, save.matchId)).ok).toBe(false);
     expect(await lbWins()).toBe(1);
 
     expect((await disputeMatch(outsider.id, true, save.matchId)).ok).toBe(true);

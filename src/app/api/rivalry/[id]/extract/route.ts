@@ -4,6 +4,7 @@ import { detectImageType } from "@/lib/image-bytes";
 import { extractForMember } from "@/lib/match-helpers";
 import { securityLog } from "@/lib/security-log";
 import { LIMITS, clientIpFromHeaders, consumeRateLimit, dailyKey } from "@/lib/rate-limit";
+import { screenshotHashOf, signExtraction } from "@/lib/extract-signature";
 
 // 5 MB upload cap, enforced on the actual bytes (not just the declaration).
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -103,7 +104,10 @@ export async function POST(
   try {
     const result = await extractForMember(who.userId, id, { bytes });
     if (!result.ok) return fail(result.error, STATUS[result.code]);
-    return json({ ok: true, extracted: result.extracted, confidence: result.confidence }, 200);
+    // Proof for the save step: binds these exact numbers to this user, rivalry and image for 30 minutes.
+    const screenshotHash = screenshotHashOf(bytes);
+    const signature = signExtraction({ rivalryId: id, userId: who.userId, screenshotHash, extracted: result.extracted });
+    return json({ ok: true, extracted: result.extracted, confidence: result.confidence, signature, screenshotHash }, 200);
   } catch (err) {
     console.error(
       `[extract] unexpected failure: ${err instanceof Error ? err.name : "unknown"}`,

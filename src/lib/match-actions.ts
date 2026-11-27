@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { recordAudit } from "@/lib/audit";
 import { checkScoreFarming } from "@/lib/anti-sybil";
-import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
+import { LIMITS, consumeMatchSaveLimits, consumeRateLimit, shouldPushMatch } from "@/lib/rate-limit";
 import { sendPushToUser } from "@/lib/push";
 import { securityLog } from "@/lib/security-log";
 import { refreshLeaderboard } from "@/lib/leaderboard-cache";
@@ -14,6 +14,7 @@ import { isAdminUser } from "@/lib/admin";
 import {
   type DisputeResult,
   type SaveMatchResult,
+  acknowledgeMatch,
   disputeMatch,
   resolveMatchDispute,
   saveMatchForUser,
@@ -33,10 +34,18 @@ export async function saveExtractedMatch(input: SaveMatchInput): Promise<SaveMat
   if (!session?.user?.id) redirect("/login");
   if (!session.user.onboarded) redirect("/onboarding");
 
+  const rivalryIdIn = (input as { rivalryId?: unknown } | null)?.rivalryId;
+  // Per-user (15/h) and per-rivalry (25/day) ceilings, checked before anything is written.
+  const limited = await consumeMatchSaveLimits(session.user.id, rivalryIdIn);
+  if (!limited.ok) {
+    securityLog("rate_limited", { route: "match_save", userId: session.user.id });
+    return { ok: false, error: limited.error };
+  }
+
   const result = await saveMatchForUser(session.user.id, input);
 
   if (result.ok) {
-    const rivalryId = (input as { rivalryId?: unknown } | null)?.rivalryId;
+    const rivalryId = rivalryIdIn;
     if (isUuid(rivalryId)) revalidatePath(`/rivalry/${rivalryId}`);
     revalidatePath("/home");
     refreshLeaderboard();
@@ -44,14 +53,16 @@ export async function saveExtractedMatch(input: SaveMatchInput): Promise<SaveMat
     if (isUuid(rivalryId)) after(() => checkScoreFarming(rivalryId).catch(() => 0));
     const opponentId = result.opponentId;
     const url = isUuid(rivalryId) ? `/rivalry/${rivalryId}` : "/home";
-    after(() =>
-      sendPushToUser(opponentId, {
+    // The opponent is always told, but rapid saves in one rivalry share a single push (and one replaceable tag).
+    after(async () => {
+      if (isUuid(rivalryId) && !(await shouldPushMatch(rivalryId).catch(() => true))) return;
+      await sendPushToUser(opponentId, {
         title: "New match logged",
-        body: `${session.user.username} added match #${result.matchNo}. Check it and dispute if it is wrong.`,
+        body: `${session.user.username} added match #${result.matchNo}. Confirm it or dispute it if it is wrong; it counts for clan wars after 24 hours.`,
         url,
-        tag: `match-${result.matchId}`,
-      }),
-    );
+        tag: isUuid(rivalryId) ? `matches-${rivalryId}` : `match-${result.matchId}`,
+      });
+    });
   }
   return result;
 }
@@ -103,7 +114,23 @@ export async function disputeMatchAction(matchId: string, reason?: unknown): Pro
   return result;
 }
 
-/** Re-confirms a disputed match so it counts again. */
+/** The opponent confirms an uploaded match ("looks right"). Lets a clan-war slot settle without waiting. */
+export async function acknowledgeMatchAction(matchId: string): Promise<DisputeResult> {
+  const me = await actor();
+  const result = await acknowledgeMatch(me.id, matchId);
+  if (result.ok) {
+    refresh(result.rivalryId);
+    notifyAll(result.notify, {
+      title: "Match confirmed",
+      body: `${me.username} confirmed your match.`,
+      url: `/rivalry/${result.rivalryId}`,
+      tag: `ack-${matchId}`,
+    });
+  }
+  return result;
+}
+
+/** Withdraws your own dispute (or, for an admin, rules on it). The uploader cannot do this. */
 export async function resolveMatchDisputeAction(matchId: string): Promise<DisputeResult> {
   const me = await actor();
   const result = await resolveMatchDispute(me.id, me.isAdmin, matchId);

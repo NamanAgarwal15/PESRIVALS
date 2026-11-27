@@ -9,11 +9,11 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import {
-  adminAuditLogs, chatReports, clanChatMessages, clanChatReports, clanMembers, clanWars, clans, dmMessages, rateLimits, rivalries, users,
+  adminAuditLogs, chatReports, clanChatMessages, clanChatReports, clanMembers, clanWars, clans, dmMessages, matches, rateLimits, rivalries, users,
 } from "@/db/schema";
 import { getChatReports, getCompletedWars, reopenClanWar, resolveChatReport, setChatMute, setClanMessageHidden } from "@/lib/admin-chat";
 import { isChatMuted } from "@/lib/chat-mute";
-import { createClanWar, getClanWars, respondToClanWar, settleWarPairings } from "@/lib/clan-wars";
+import { createClanWar, getClanWars, respondToClanWar, settleClanWarsForMatch, settleWarPairings } from "@/lib/clan-wars";
 import { createClan, getClanMessages, pruneClanChat, sendClanMessage } from "@/lib/clans";
 import { DM_RETENTION_DAYS, getThread, pruneDmMessages, sendMessage } from "@/lib/dm-chat";
 import { extractMatchFromScreenshot } from "@/lib/gemini-extract";
@@ -65,6 +65,9 @@ async function playMatch(me: { id: string }, rivalryId: string, mine: number, th
     extracted: { left: { ...SIDE, goals: mine, shots: Math.max(5, mine), shots_on_target: Math.max(3, mine) }, right: { ...SIDE, team: "B", goals: theirs, shots: Math.max(5, theirs), shots_on_target: Math.max(3, theirs) } },
   });
   if (!res.ok) throw new Error(res.error);
+  // Model a screenshot-verified match the opponent has acknowledged (war slots need both), then settle.
+  await db.update(matches).set({ verified: true, acknowledgedAt: new Date() }).where(eq(matches.id, res.matchId));
+  await settleClanWarsForMatch(res.matchId);
   return res.matchId;
 }
 const auditActions = async (actorId: string) => (await db.select({ a: adminAuditLogs.action }).from(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, actorId))).map((r) => r.a);

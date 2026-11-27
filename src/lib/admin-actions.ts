@@ -15,6 +15,7 @@ import {
   setTempPasswordHash,
 } from "@/lib/admin";
 import { QUOTA_BUCKETS, resetUserQuota } from "@/lib/admin-coach";
+import { resolveMatchDispute } from "@/lib/match-helpers";
 import { reopenClanWar, resolveChatReport, setChatMute, setClanMessageHidden, setGlobalMessageHidden } from "@/lib/admin-chat";
 import { z } from "zod";
 import { BCRYPT_COST, passwordSchema } from "@/lib/auth-helpers";
@@ -82,6 +83,17 @@ export async function adminDeleteMatchAction(fd: FormData): Promise<void> {
   const matchId = field(fd, "matchId");
   if (!isUuid(matchId)) return;
   if (await deleteMatch(matchId, me)) await recordAudit(me, "match.soft_delete", "match", matchId);
+  revalidatePath("/admin");
+  refreshLeaderboard();
+}
+
+/** Admin ruling on a disputed (or frozen) match: confirm it so it counts again. Audited. Void = adminDeleteMatchAction. */
+export async function adminResolveDisputeAction(fd: FormData): Promise<void> {
+  const me = await requireAdmin();
+  const matchId = field(fd, "matchId");
+  if (!isUuid(matchId)) return;
+  const res = await resolveMatchDispute(me, true, matchId);
+  if (res.ok) await recordAudit(me, "match.resolve_dispute", "match", matchId);
   revalidatePath("/admin");
   refreshLeaderboard();
 }

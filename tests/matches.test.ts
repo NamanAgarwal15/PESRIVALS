@@ -497,7 +497,7 @@ describe("saveMatchForUser", () => {
       matchNo: 1,
       source: "screenshot",
       status: "confirmed",
-      needsReview: false,
+      needsReview: true, // unsigned (no extraction proof) saves are always flagged for review
       createdBy: rivalry.b.id,
       decidedOnPens: false,
       remark: "What a game",

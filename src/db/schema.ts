@@ -23,6 +23,7 @@ export const rivalryStatus = pgEnum("rivalry_status", [
   "active",
   "declined",
   "blocked",
+  "archived",
 ]);
 
 export const matchSource = pgEnum("match_source", ["import", "screenshot"]);
@@ -184,6 +185,8 @@ export const rivalries = pgTable(
       .notNull()
       .defaultNow(),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    // Set when a participant was deleted/suspended and the rivalry was archived (restorable on unsuspend).
+    archivedBy: uuid("archived_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     unique("rivalries_user_pair_unique").on(t.userAId, t.userBId),
@@ -228,6 +231,15 @@ export const matches = pgTable(
     isExtraTime: boolean("is_extra_time").default(false),
     isPenalties: boolean("is_penalties").default(false),
     matchContext: varchar("match_context", { length: 32 }),
+
+    // Integrity (hardening batch 1a): signed-extraction proof, dispute lock and opponent acknowledgement.
+    verified: boolean("verified").notNull().default(false),
+    screenshotHash: varchar("screenshot_hash", { length: 64 }),
+    disputeCount: integer("dispute_count").notNull().default(0),
+    disputedBy: uuid("disputed_by").references(() => users.id, { onDelete: "set null" }),
+    adminReview: boolean("admin_review").notNull().default(false),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    acknowledgedBy: uuid("acknowledged_by").references(() => users.id, { onDelete: "set null" }),
 
     // Soft delete: a non-null deleted_at hides the match everywhere.
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

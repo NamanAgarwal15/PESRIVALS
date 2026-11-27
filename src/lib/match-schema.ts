@@ -72,6 +72,9 @@ export const saveMatchInputSchema = z.object({
   opponentPlaystyle: z.enum(PLAYSTYLES).nullish().transform((v) => v ?? null),
   matchContext: z.enum(MATCH_CONTEXTS).nullish().transform((v) => v ?? null),
   isExtraTime: z.boolean().default(false),
+  // Issued by the extract route with the numbers. Missing, expired or not matching = saved as unverified.
+  signature: z.string().max(200).nullish().transform((v) => v ?? null),
+  screenshotHash: z.string().regex(/^[0-9a-f]{64}$/).nullish().transform((v) => v ?? null),
   // Set by the browser when any field was yellow; the server also re-checks.
   needsReview: z.boolean().default(false),
   remark: z

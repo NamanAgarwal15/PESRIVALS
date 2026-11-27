@@ -4,7 +4,7 @@
 // head-to-head matchups, or emails.
 // Framework-free so it is unit-testable.
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries, users } from "@/db/schema";
 import { computeSummary, type Summary } from "@/lib/rivalry-analytics";
@@ -36,7 +36,13 @@ export async function loadActiveMatches(): Promise<ActiveMatchRow[]> {
     .from(matches)
     .innerJoin(rivalries, eq(matches.rivalryId, rivalries.id))
     .where(
-      and(eq(matches.status, "confirmed"), eq(rivalries.status, "active"), isNull(matches.deletedAt)),
+      and(
+        eq(matches.status, "confirmed"),
+        eq(rivalries.status, "active"),
+        isNull(matches.deletedAt),
+        // Matches against a suspended or deleted opponent never count (ghost-opponent farming).
+        sql`NOT EXISTS (SELECT 1 FROM users gu WHERE gu.suspended AND (gu.id = ${rivalries.userAId} OR gu.id = ${rivalries.userBId}))`,
+      ),
     )
     .limit(LEADERBOARD_MAX_MATCHES);
   return joined.map((j) => ({ ...j.match, userAId: j.userAId, userBId: j.userBId }));

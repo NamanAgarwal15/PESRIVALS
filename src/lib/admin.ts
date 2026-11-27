@@ -4,6 +4,7 @@
 import { and, count, desc, eq, gte, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, rivalries, siteSettings, sybilFlags, users } from "@/db/schema";
+import { archiveRivalriesForUser, restoreRivalriesForUser } from "@/lib/rivalry-lifecycle";
 
 export const ANNOUNCEMENT_KEY = "announcement";
 
@@ -75,6 +76,26 @@ export async function listRecentMatches(limit = 25) {
 
 export async function setSuspended(userId: string, suspended: boolean) {
   await db.update(users).set({ suspended, updatedAt: new Date() }).where(eq(users.id, userId));
+  // A suspended player cannot confirm or dispute anything: close their rivalries so nobody farms against them.
+  if (suspended) await archiveRivalriesForUser(userId);
+  else await restoreRivalriesForUser(userId);
+}
+
+/** Matches frozen or waiting on a decision: disputed, newest first. Admin-only (the caller checks). */
+export async function listDisputedMatches(limit = 50) {
+  const res = await db.execute(sql`
+    SELECT m.id, m.match_no AS "matchNo", m.dispute_count AS "disputeCount", m.admin_review AS "adminReview",
+           m.user_a_goals AS "aGoals", m.user_b_goals AS "bGoals", m.remark,
+           ua.username AS "aUser", ub.username AS "bUser", ud.username AS "disputedBy", m.created_at AS "createdAt"
+    FROM matches m
+    JOIN rivalries r ON r.id = m.rivalry_id
+    JOIN users ua ON ua.id = r.user_a_id
+    JOIN users ub ON ub.id = r.user_b_id
+    LEFT JOIN users ud ON ud.id = m.disputed_by
+    WHERE m.status = 'disputed' AND m.deleted_at IS NULL
+    ORDER BY m.admin_review DESC, m.created_at DESC
+    LIMIT ${limit}`);
+  return (res as unknown as { rows: Record<string, string | number | boolean | null>[] }).rows;
 }
 
 export async function setLeaderboardVisibility(userId: string, visible: boolean) {

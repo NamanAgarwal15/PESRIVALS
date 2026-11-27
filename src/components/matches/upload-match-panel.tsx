@@ -37,6 +37,8 @@ export function UploadMatchPanel({
   const [error, setError] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<ExtractedMatch | null>(null);
   const [confidence, setConfidence] = useState<ConfidenceReport | null>(null);
+  // Proof from the server that these numbers came from the screenshot reader (sent back on save).
+  const [proof, setProof] = useState<{ signature: string | null; screenshotHash: string | null }>({ signature: null, screenshotHash: null });
   const [mySide, setMySide] = useState<Side | null>(null);
   const [host, setHost] = useState<Host | null>(null);
   const [decidedOnPens, setDecidedOnPens] = useState(false);
@@ -53,6 +55,7 @@ export function UploadMatchPanel({
   function reset() {
     setExtracted(null);
     setConfidence(null);
+    setProof({ signature: null, screenshotHash: null });
     setMySide(null);
     setHost(null);
     setDecidedOnPens(false);
@@ -92,7 +95,7 @@ export function UploadMatchPanel({
         return;
       }
       const result = (await response.json().catch(() => null)) as
-        | { ok: true; extracted: ExtractedMatch; confidence?: ConfidenceReport }
+        | { ok: true; extracted: ExtractedMatch; confidence?: ConfidenceReport; signature?: string | null; screenshotHash?: string | null }
         | { ok: false; error?: string }
         | null;
 
@@ -101,6 +104,7 @@ export function UploadMatchPanel({
         setExtracted(result.extracted);
         setHost(readRememberedHost(rivalryId));
         setConfidence(result.confidence ?? null);
+        setProof({ signature: result.signature ?? null, screenshotHash: result.screenshotHash ?? null });
       } else {
         setError(result?.error ?? "Could not read that screenshot. Please try again.");
       }
@@ -123,6 +127,8 @@ export function UploadMatchPanel({
         decidedOnPens,
         remark,
         needsReview: confidence?.hasYellow ?? false,
+        signature: proof.signature,
+        screenshotHash: proof.screenshotHash,
         myPlaystyle,
         opponentPlaystyle: oppPlaystyle,
         matchContext: context,

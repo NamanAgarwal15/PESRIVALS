@@ -3,6 +3,7 @@
 
 import { randomBytes } from "node:crypto";
 import { removeUserFromClan } from "@/lib/clans";
+import { archiveRivalriesForUser } from "@/lib/rivalry-lifecycle";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -88,6 +89,7 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
   await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
   await db.delete(deviceSessions).where(eq(deviceSessions.userId, userId));
   await db.delete(coachChatLogs).where(eq(coachChatLogs.userId, userId)); // coach prompts and replies go with the account
+  await archiveRivalriesForUser(userId); // no ghost opponent to farm: rivalries archived, pending challenges declined
   await removeUserFromClan(userId); // hands the clan over or disbands it; no ghost members
   await db.delete(otpCodes).where(eq(otpCodes.userId, userId));
   await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));

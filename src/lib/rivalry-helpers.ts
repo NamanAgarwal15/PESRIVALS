@@ -44,7 +44,8 @@ function relationFor(row: RivalryRow | undefined, currentUserId: string): Rivalr
   if (row.status === "pending") {
     return row.requestedBy === currentUserId ? "pending_sent" : "pending_received";
   }
-  return row.status;
+  // An archived rivalry (the other player was suspended or deleted) cannot be acted on: shown as unavailable.
+  return row.status === "archived" ? "blocked" : row.status;
 }
 
 export type RivalryOpponent = {
@@ -196,6 +197,7 @@ export async function sendRivalryRequest(
         return fail("Already rivals");
 
       case "blocked":
+      case "archived":
         return fail("Cannot send request to this user");
 
       case "pending": {

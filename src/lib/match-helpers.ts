@@ -2,13 +2,14 @@
 // next/* imports) so it can be exercised directly by Vitest. Every function
 // takes the acting user's id explicitly and checks rivalry membership itself.
 
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { matches, rivalries } from "@/db/schema";
+import { matches, rivalries, users } from "@/db/schema";
 import { settleClanWarsForMatch } from "@/lib/clan-wars";
 import { extractionCacheKey, getCachedExtraction, putCachedExtraction } from "@/lib/extract-cache";
 import { assessConfidence } from "@/lib/confidence";
 import { type IngestResult, VisionVlmIngestor } from "@/lib/ingestors";
+import { verifyExtraction } from "@/lib/extract-signature";
 import { type ExtractedSide, saveMatchInputSchema } from "@/lib/match-schema";
 import { type MatchOutcome, type StatKey, STAT_KEYS, matchOutcome } from "@/lib/match-stats";
 import { isUuid } from "@/lib/rivalry-helpers";
@@ -44,7 +45,8 @@ function slotColumns(slot: "A" | "B", side: ExtractedSide): Partial<MatchInsert>
   return out as Partial<MatchInsert>;
 }
 
-async function findActiveRivalry(currentUserId: string, rivalryId: unknown) {
+/** `readOnly` also admits an archived rivalry (opponent deleted/suspended): history stays visible, nothing can be written. */
+async function findActiveRivalry(currentUserId: string, rivalryId: unknown, readOnly = false) {
   if (!isUuid(currentUserId) || !isUuid(rivalryId)) return null;
   const [row] = await db
     .select({
@@ -56,11 +58,17 @@ async function findActiveRivalry(currentUserId: string, rivalryId: unknown) {
     .where(
       and(
         eq(rivalries.id, rivalryId),
-        eq(rivalries.status, "active"),
+        readOnly ? inArray(rivalries.status, ["active", "archived"]) : eq(rivalries.status, "active"),
         or(eq(rivalries.userAId, currentUserId), eq(rivalries.userBId, currentUserId)),
       ),
     );
-  return row ?? null;
+  if (!row) return null;
+  if (readOnly) return row;
+  // Ghost-opponent guard: nothing is read or saved against a suspended or deleted opponent.
+  const opponentId = row.userAId === currentUserId ? row.userBId : row.userAId;
+  const [opp] = await db.select({ suspended: users.suspended }).from(users).where(eq(users.id, opponentId));
+  if (!opp || opp.suspended) return null;
+  return row;
 }
 
 function pgErrorCode(err: unknown): string | null {
@@ -134,15 +142,33 @@ export async function saveMatchForUser(
     };
   }
   const { rivalryId, extracted, mySide, host, decidedOnPens, remark } = parsed.data;
-  // Yellow if the reader flagged anything (client-reported) or our own checks do.
+  // Proof the numbers came from the reader for this user, rivalry and image. Anything else
+  // (hand-edited, replayed on another rivalry, expired, unsigned) is saved as UNVERIFIED.
+  const verified = verifyExtraction(parsed.data.signature, {
+    rivalryId,
+    userId: currentUserId,
+    screenshotHash: parsed.data.screenshotHash,
+    extracted,
+  });
+  // Yellow if the reader flagged anything (client-reported), our own checks do, or it is unverified.
   const needsReview =
-    parsed.data.needsReview || assessConfidence(extracted).hasYellow;
+    parsed.data.needsReview || assessConfidence(extracted).hasYellow || !verified;
 
   const rivalry = await findActiveRivalry(currentUserId, rivalryId);
   if (!rivalry) return { ok: false, error: "Rivalry not found" };
 
   const iAmUserA = rivalry.userAId === currentUserId;
   const opponentId = iAmUserA ? rivalry.userBId : rivalry.userAId;
+
+  if (verified && parsed.data.screenshotHash) {
+    // One screenshot is one match: the same image cannot be saved twice in a rivalry.
+    const [dup] = await db
+      .select({ id: matches.id })
+      .from(matches)
+      .where(and(eq(matches.rivalryId, rivalry.id), eq(matches.screenshotHash, parsed.data.screenshotHash), isNull(matches.deletedAt)))
+      .limit(1);
+    if (dup) return { ok: false, error: "That screenshot has already been saved as a match." };
+  }
 
   const mine = extracted[mySide];
   const theirs = extracted[mySide === "left" ? "right" : "left"];
@@ -157,6 +183,8 @@ export async function saveMatchForUser(
     source: "screenshot",
     status: "confirmed",
     needsReview,
+    verified,
+    screenshotHash: verified ? parsed.data.screenshotHash : null,
     decidedOnPens,
     remark,
     playstyleA: iAmUserA ? parsed.data.myPlaystyle : parsed.data.opponentPlaystyle,
@@ -219,6 +247,12 @@ export type RivalryMatch = {
   status: "confirmed" | "pending" | "disputed";
   /** True when the current user uploaded the match. */
   createdByMe: boolean;
+  /** The opponent confirmed it (or the dispute was withdrawn). */
+  acknowledged: boolean;
+  /** Disputed by the current user, so they may withdraw it. */
+  disputedByMe: boolean;
+  /** Disputed repeatedly: only an admin can decide. */
+  frozen: boolean;
   remark: string | null;
 };
 
@@ -228,7 +262,7 @@ export async function getRivalryMatches(
   rivalryId: unknown,
   limit = 50,
 ): Promise<RivalryMatch[]> {
-  const rivalry = await findActiveRivalry(currentUserId, rivalryId);
+  const rivalry = await findActiveRivalry(currentUserId, rivalryId, true);
   if (!rivalry) return [];
   const iAmUserA = rivalry.userAId === currentUserId;
 
@@ -247,6 +281,9 @@ export async function getRivalryMatches(
       status: matches.status,
       createdBy: matches.createdBy,
       remark: matches.remark,
+      acknowledgedAt: matches.acknowledgedAt,
+      disputedBy: matches.disputedBy,
+      adminReview: matches.adminReview,
     })
     .from(matches)
     .where(and(eq(matches.rivalryId, rivalry.id), isNull(matches.deletedAt)))
@@ -268,6 +305,9 @@ export async function getRivalryMatches(
       needsReview: row.needsReview,
       status: row.status,
       createdByMe: row.createdBy === currentUserId,
+      acknowledged: row.acknowledgedAt !== null,
+      disputedByMe: row.disputedBy === currentUserId,
+      frozen: row.adminReview,
       outcome: matchOutcome(myGoals, opponentGoals, row.decidedOnPens),
       venue: row.hostUserId === null ? null : row.hostUserId === currentUserId ? "home" : "away",
       remark: row.remark,
@@ -290,6 +330,11 @@ async function loadMatchForActor(actorId: string, isAdmin: boolean, matchId: unk
       id: matches.id,
       status: matches.status,
       rivalryId: matches.rivalryId,
+      createdBy: matches.createdBy,
+      disputeCount: matches.disputeCount,
+      disputedBy: matches.disputedBy,
+      adminReview: matches.adminReview,
+      acknowledgedAt: matches.acknowledgedAt,
       userAId: rivalries.userAId,
       userBId: rivalries.userBId,
     })
@@ -301,7 +346,13 @@ async function loadMatchForActor(actorId: string, isAdmin: boolean, matchId: unk
   return row;
 }
 
-/** A rivalry member (or admin) flags a confirmed match; it stops counting until resolved. */
+/** After this many disputes the match is frozen for an admin: nobody else can clear it. */
+export const MAX_DISPUTE_CYCLES = 3;
+
+/**
+ * The OTHER player (never the uploader) flags a confirmed match; it stops counting until resolved.
+ * Admins may dispute any match. The third dispute freezes the match for admin review.
+ */
 export async function disputeMatch(
   actorId: string,
   isAdmin: boolean,
@@ -311,16 +362,24 @@ export async function disputeMatch(
   const row = await loadMatchForActor(actorId, isAdmin, matchId);
   if (!row) return { ok: false, error: "Match not found" };
   if (row.status !== "confirmed") return { ok: false, error: "Only a confirmed match can be disputed" };
+  if (!isAdmin && row.createdBy === actorId) {
+    return { ok: false, error: "You uploaded this match. Only your opponent can dispute it." };
+  }
   const note = typeof reason === "string" ? reason.trim().slice(0, 200) || null : null;
   await db
     .update(matches)
     .set({
       status: "disputed",
       needsReview: true,
+      disputedBy: actorId,
+      disputeCount: sql`${matches.disputeCount} + 1`,
+      adminReview: sql`${matches.disputeCount} + 1 >= ${MAX_DISPUTE_CYCLES}`,
+      acknowledgedAt: null,
+      acknowledgedBy: null,
       ...(note ? { remark: note } : {}),
     })
     .where(and(eq(matches.id, row.id), eq(matches.status, "confirmed")));
-  await settleClanWarsForMatch(row.id).catch(() => undefined); // reopens a clan-war slot this match had settled
+  await settleClanWarsForMatch(row.id).catch((err) => console.error(`[clan-wars] settle failed: ${err instanceof Error ? err.name : "unknown"}`)); // reopens a clan-war slot this match had settled
   return {
     ok: true,
     rivalryId: row.rivalryId,
@@ -328,7 +387,11 @@ export async function disputeMatch(
   };
 }
 
-/** A rivalry member (or admin) re-confirms a disputed match; it counts again. */
+/**
+ * Clears a dispute so the match counts again. Only the player who raised it (withdrawing it) or an
+ * admin may do this; the uploader can never re-confirm their own disputed match, and a frozen match
+ * (admin review) is admin-only.
+ */
 export async function resolveMatchDispute(
   actorId: string,
   isAdmin: boolean,
@@ -337,14 +400,36 @@ export async function resolveMatchDispute(
   const row = await loadMatchForActor(actorId, isAdmin, matchId);
   if (!row) return { ok: false, error: "Match not found" };
   if (row.status !== "disputed") return { ok: false, error: "This match is not disputed" };
+  if (!isAdmin) {
+    if (row.adminReview) return { ok: false, error: "This match has been disputed repeatedly and is waiting for an admin to decide." };
+    if (row.disputedBy !== actorId) return { ok: false, error: "Only the player who disputed this match, or an admin, can clear the dispute." };
+  }
+  // The disputer withdrawing (or an admin ruling) is the other side's agreement: it counts as acknowledged.
   await db
     .update(matches)
-    .set({ status: "confirmed", needsReview: false })
+    .set({ status: "confirmed", needsReview: false, adminReview: false, acknowledgedAt: new Date(), acknowledgedBy: actorId })
     .where(and(eq(matches.id, row.id), eq(matches.status, "disputed")));
-  await settleClanWarsForMatch(row.id).catch(() => undefined); // a re-confirmed match can settle a clan-war slot
+  await settleClanWarsForMatch(row.id).catch((err) => console.error(`[clan-wars] settle failed: ${err instanceof Error ? err.name : "unknown"}`)); // a re-confirmed match can settle a clan-war slot
   return {
     ok: true,
     rivalryId: row.rivalryId,
     notify: [row.userAId, row.userBId].filter((id) => id !== actorId),
   };
+}
+
+/**
+ * The opponent of the uploader says "yes, that is the result". It lets a clan-war slot settle
+ * immediately instead of after the grace window. Idempotent.
+ */
+export async function acknowledgeMatch(actorId: string, matchId: unknown): Promise<DisputeResult> {
+  const row = await loadMatchForActor(actorId, false, matchId);
+  if (!row) return { ok: false, error: "Match not found" };
+  if (row.status !== "confirmed") return { ok: false, error: "Only a confirmed match can be acknowledged" };
+  if (row.createdBy === actorId) return { ok: false, error: "You uploaded this match. Your opponent confirms it." };
+  await db
+    .update(matches)
+    .set({ acknowledgedAt: new Date(), acknowledgedBy: actorId })
+    .where(and(eq(matches.id, row.id), eq(matches.status, "confirmed"), isNull(matches.acknowledgedAt)));
+  await settleClanWarsForMatch(row.id).catch((err) => console.error(`[clan-wars] settle failed: ${err instanceof Error ? err.name : "unknown"}`));
+  return { ok: true, rivalryId: row.rivalryId, notify: [row.createdBy].filter((id): id is string => !!id && id !== actorId) };
 }

@@ -6,6 +6,8 @@
 // Integrity rules (OWASP A08):
 //  - only matches with status = 'confirmed', not soft-deleted, saved AFTER the war went active,
 //    inside the pair's active rivalry, with no open anti-sybil flag on that rivalry, can settle a slot
+//  - the match must be VERIFIED (numbers signed by the screenshot reader) and either acknowledged by the
+//    opponent or older than WAR_GRACE_HOURS with no dispute; both players must be active (not suspended/deleted)
 //  - draws never settle a slot (the slot waits for a decisive match; penalties are not recorded as a winner)
 //  - clan_war_pairings.match_id is UNIQUE, so one match can settle one slot, ever
 //  - settlement is idempotent: every write is a conditional UPDATE (status = 'pending'), counts are
@@ -23,6 +25,8 @@ import { LIMITS, consumeRateLimit } from "@/lib/rate-limit";
 import { canonicalPair } from "@/lib/rivalry-helpers";
 
 export const MAX_OPEN_WARS_PER_CLAN = 3;
+/** A saved match settles a war slot only once the opponent acknowledged it OR this long passed with no dispute. */
+export const WAR_GRACE_HOURS = 24;
 export const winsNeeded = (seriesSize: number) => Math.ceil(seriesSize / 2);
 
 const usernameSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9_]{3,20}$/);
@@ -177,6 +181,9 @@ export async function settleWarPairings(warId: string): Promise<void> {
           AND m.user_a_goals <> m.user_b_goals
           AND NOT EXISTS (SELECT 1 FROM clan_war_pairings x WHERE x.match_id = m.id)
           AND NOT EXISTS (SELECT 1 FROM sybil_flags f WHERE f.rivalry_id = r.id AND f.status = 'open')
+          AND m.verified = true
+          AND (m.acknowledged_at IS NOT NULL OR m.created_at <= now() - (${WAR_GRACE_HOURS} * interval '1 hour'))
+          AND NOT EXISTS (SELECT 1 FROM users u WHERE u.suspended AND (u.id = r.user_a_id OR u.id = r.user_b_id))
         ORDER BY m.created_at ASC, m.id ASC
         LIMIT 1`),
     )[0];

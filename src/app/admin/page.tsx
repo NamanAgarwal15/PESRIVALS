@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import {
   adminDeleteMatchAction,
+  adminResolveDisputeAction,
   adminReopenClanWarAction,
   adminResolveSybilFlagAction,
   adminSetChatMuteAction,
@@ -21,6 +22,7 @@ import {
   getAnnouncement,
   getPlatformStats,
   isAdminUser,
+  listDisputedMatches,
   listOpenSybilFlags,
   listRecentMatches,
   listUsers,
@@ -58,7 +60,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
   const chatPage = Math.max(0, Math.min(10_000, Number(typeof sp.cp === "string" ? sp.cp : 0) || 0));
   const reportStatus = (REPORT_STATUSES as readonly string[]).includes(String(sp.rs)) ? (sp.rs as (typeof REPORT_STATUSES)[number]) : sp.rs === "all" ? "all" : "open";
   const reportPage = Math.max(0, Math.min(10_000, Number(typeof sp.rp === "string" ? sp.rp : 0) || 0));
-  const [stats, userRows, recent, announcement, flags, audit, chats, reports, completedWars] = await Promise.all([
+  const [stats, userRows, recent, announcement, flags, audit, chats, reports, completedWars, disputed] = await Promise.all([
     getPlatformStats(),
     listUsers(q),
     listRecentMatches(),
@@ -68,6 +70,7 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
     getAdminCoachChatLogs(adminId, { flaggedOnly: chatFilter === "flagged", username: chatUser, page: chatPage }),
     getChatReports(adminId, { status: reportStatus, page: reportPage }),
     getCompletedWars(adminId),
+    listDisputedMatches(),
   ]);
   const matchRows = (recent as unknown as { rows: Record<string, string | number>[] }).rows;
   const kpis: [string, number][] = [
@@ -204,6 +207,40 @@ async function AdminContent({ searchParams }: { searchParams: PageProps<"/admin"
             </form>
           ))}
           {flags.length === 0 ? <p className="text-sm text-muted-foreground">No open flags.</p> : null}
+        </CardContent>
+      </Card>
+
+      <Card id="disputed-matches">
+        <CardHeader>
+          <CardTitle>Disputed matches</CardTitle>
+          <CardDescription>
+            Disputed matches do not count anywhere. A match disputed three times is frozen here: only an admin can confirm it or void it. Both actions are logged.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {disputed.map((m) => (
+            <div key={String(m.id)} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-2 text-sm last:border-0">
+              <span>
+                @{m.aUser} <b className="tabular-nums">{String(m.aGoals)}–{String(m.bGoals)}</b> @{m.bUser}
+                <span className="ml-2 text-muted-foreground">#{String(m.matchNo)}</span>
+                {m.adminReview ? <b className="ml-2 text-loss">FROZEN</b> : null}
+                <span className="block text-xs text-muted-foreground">
+                  Disputed {String(m.disputeCount)}x{m.disputedBy ? ` (last by @${m.disputedBy})` : ""}{m.remark ? `: ${String(m.remark)}` : ""}
+                </span>
+              </span>
+              <span className="flex gap-2">
+                <form action={adminResolveDisputeAction}>
+                  <input type="hidden" name="matchId" value={String(m.id)} />
+                  <Button type="submit" size="sm" variant="outline">Confirm</Button>
+                </form>
+                <form action={adminDeleteMatchAction}>
+                  <input type="hidden" name="matchId" value={String(m.id)} />
+                  <Button type="submit" size="sm" variant="destructive">Void</Button>
+                </form>
+              </span>
+            </div>
+          ))}
+          {disputed.length === 0 ? <p className="text-sm text-muted-foreground">No disputed matches.</p> : null}
         </CardContent>
       </Card>
 

@@ -5,7 +5,7 @@ import { type ReactNode, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { RivalryMatch } from "@/lib/match-helpers";
-import { disputeMatchAction, resolveMatchDisputeAction } from "@/lib/match-actions";
+import { acknowledgeMatchAction, disputeMatchAction, resolveMatchDisputeAction } from "@/lib/match-actions";
 import type { MatchOutcome } from "@/lib/match-stats";
 
 const OUTCOME: Record<MatchOutcome, { label: string; className: string }> = {
@@ -123,11 +123,14 @@ function MatchCard({
 
         {disputed ? (
           <p className="text-xs text-muted-foreground">
-            Disputed: this match is not counted in any stats until it is resolved.
+            {match.frozen
+              ? "Disputed several times: an admin will decide. It is not counted until then."
+              : "Disputed: this match is not counted in any stats until it is resolved."}
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
           {disputed ? (
+            match.disputedByMe && !match.frozen ? (
             <Button
               type="button"
               size="sm"
@@ -135,9 +138,21 @@ function MatchCard({
               disabled={pending}
               onClick={() => run(() => resolveMatchDisputeAction(match.id))}
             >
-              Resolve / Confirm
+              Withdraw dispute
             </Button>
+            ) : null
           ) : !match.createdByMe ? (
+            <>
+            {match.status === "confirmed" && !match.acknowledged ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={pending}
+                onClick={() => run(() => acknowledgeMatchAction(match.id))}
+              >
+                Looks right
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -151,6 +166,7 @@ function MatchCard({
             >
               Dispute
             </Button>
+            </>
           ) : null}
           {error ? (
             <span role="alert" className="text-xs text-destructive">

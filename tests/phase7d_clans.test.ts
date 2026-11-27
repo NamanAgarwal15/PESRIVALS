@@ -13,7 +13,7 @@ import {
 import { deleteAccount } from "@/lib/account";
 import { refreshSessionUser } from "@/lib/auth-helpers";
 import {
-  createClanWar, getClanWars, respondToClanWar, settleWarPairings, winsNeeded,
+  createClanWar, getClanWars, respondToClanWar, settleClanWarsForMatch, settleWarPairings, winsNeeded,
 } from "@/lib/clan-wars";
 import {
   CLAN_MAX_MEMBERS, createClan, disbandClan, getClanHub, getClanMessages, getMembership, inviteToClan, kickMember,
@@ -70,6 +70,9 @@ async function playMatch(me: { id: string }, rivalryId: string, mine: number, th
     extracted: { left: { ...SIDE, goals: mine, shots: Math.max(5, mine), shots_on_target: Math.max(3, mine) }, right: { ...SIDE, team: "B", goals: theirs, shots: Math.max(5, theirs), shots_on_target: Math.max(3, theirs) } },
   });
   if (!res.ok) throw new Error(res.error);
+  // Model a screenshot-verified match the opponent has acknowledged (war slots need both), then settle.
+  await db.update(matches).set({ verified: true, acknowledgedAt: new Date() }).where(eq(matches.id, res.matchId));
+  await settleClanWarsForMatch(res.matchId);
   return res.matchId;
 }
 

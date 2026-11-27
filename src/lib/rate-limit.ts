@@ -34,6 +34,9 @@ export const LIMITS = {
   clanChatIp: { max: 60, windowMinutes: 2 },
   clanChatRead: { max: 300, windowMinutes: 10 },
   warChallenge: { max: 6, windowMinutes: 60 },
+  matchSave: { max: 15, windowMinutes: 60 },
+  matchSaveRivalryDay: { max: 25, windowMinutes: 1440 },
+  matchPush: { max: 1, windowMinutes: 10 },
 } as const;
 
 /**
@@ -119,6 +122,29 @@ export async function peekRateLimit(key: string, max: number, windowMinutes: num
 /** Gives one hit back (used when an AI call fails after its quota was reserved). */
 export async function refundRateLimit(key: string): Promise<void> {
   await db.execute(sql`UPDATE rate_limits SET count = GREATEST(count - 1, 0) WHERE key = ${key}`);
+}
+
+/** Per-user hourly and per-rivalry daily ceilings on saving matches (stops stat/war farming and push spam). */
+export async function consumeMatchSaveLimits(
+  userId: string,
+  rivalryId: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await consumeRateLimit(`match-save:${userId}`, LIMITS.matchSave.max, LIMITS.matchSave.windowMinutes);
+  if (!user.ok) return { ok: false, error: "You are saving matches very quickly. Try again in a bit." };
+  if (typeof rivalryId === "string" && /^[0-9a-f-]{36}$/i.test(rivalryId)) {
+    const day = await consumeRateLimit(
+      `match-save-rv-day:${rivalryId}:${utcDay()}`,
+      LIMITS.matchSaveRivalryDay.max,
+      LIMITS.matchSaveRivalryDay.windowMinutes,
+    );
+    if (!day.ok) return { ok: false, error: "This rivalry has reached today's match limit. It resets at midnight UTC." };
+  }
+  return { ok: true };
+}
+
+/** True at most once per rivalry per 10 minutes: rapid saves share one push notification. */
+export async function shouldPushMatch(rivalryId: string): Promise<boolean> {
+  return (await consumeRateLimit(`match-push:${rivalryId}`, LIMITS.matchPush.max, LIMITS.matchPush.windowMinutes)).ok;
 }
 
 /** Deletes a user's buckets for the given names: hourly `name:userId` and daily `name-day:userId:*`. */
